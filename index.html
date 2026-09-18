@@ -18,6 +18,7 @@
     <div id="hud-left">
       <div id="lives"></div>
       <div id="shield-wrap"><div id="shield-bar"></div></div>
+      <div id="combo-display"></div>
     </div>
     <div id="hud-right">
       <div id="score">SCORE 0</div>
@@ -26,10 +27,18 @@
     <div id="planet-name"></div>
   </div>
 
+  <button id="mute-btn" aria-label="Toggle sound">🔊</button>
+
+  <!-- Boss health bar -->
+  <div id="boss-bar-wrap" class="hidden">
+    <div id="boss-name"></div>
+    <div id="boss-health-outer"><div id="boss-health-fill"></div></div>
+  </div>
+
   <!-- Start screen -->
   <div class="screen" id="screen-start">
     <h1 class="title">GALACTIC<br>ZOMBIE ASSAULT</h1>
-    <p class="subtitle">they came from the dirt.<br>now they've got rockets.</p>
+    <p class="subtitle">they came from the dirt.<br>now they've got rockets<br>&amp; they don't die easy.</p>
     <button class="btn" id="btn-start">START GAME</button>
     <div class="howto">
       <div class="howto-row"><span class="key">◀ ▶</span> or <span class="key">A D</span> move</div>
