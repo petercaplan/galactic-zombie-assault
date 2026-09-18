@@ -50,6 +50,19 @@ canvas#game {
 
 #lives { font-size: 18px; letter-spacing: 3px; }
 
+#combo-display {
+  font-size: 13px;
+  font-weight: 900;
+  color: #ff66ff;
+  text-shadow: 0 0 10px #ff33ff, 0 0 20px #ff33ff;
+  min-height: 16px;
+  letter-spacing: 1px;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.15s, transform 0.15s;
+}
+#combo-display.show { opacity: 1; transform: scale(1); }
+
 #shield-wrap {
   width: 90px;
   height: 6px;
@@ -81,6 +94,62 @@ canvas#game {
   white-space: nowrap;
 }
 
+/* ---------- Mute button ---------- */
+#mute-btn {
+  position: absolute;
+  top: max(58px, calc(env(safe-area-inset-top) + 48px));
+  right: 16px;
+  z-index: 6;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.3);
+  background: rgba(0,0,0,0.35);
+  color: #fff;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+#mute-btn:active { background: rgba(255,255,255,0.15); }
+
+/* ---------- Boss health bar ---------- */
+#boss-bar-wrap {
+  position: absolute;
+  top: max(34px, calc(env(safe-area-inset-top) + 24px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(320px, 80vw);
+  z-index: 6;
+  text-align: center;
+  pointer-events: none;
+}
+#boss-bar-wrap.hidden { display: none; }
+#boss-name {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #ff8899;
+  text-shadow: 0 0 8px #ff2244;
+  margin-bottom: 3px;
+}
+#boss-health-outer {
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,80,100,0.5);
+  overflow: hidden;
+}
+#boss-health-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #ff2244, #ff8833);
+  box-shadow: 0 0 10px #ff2244;
+  transition: width 0.15s ease-out;
+}
+
 /* ---------- Screens ---------- */
 .screen {
   position: absolute;
@@ -110,6 +179,11 @@ canvas#game {
     0 0 10px #2bffab,
     0 0 30px #14a86b,
     0 0 60px rgba(43,255,171,0.5);
+  animation: title-pulse 2.4s ease-in-out infinite;
+}
+@keyframes title-pulse {
+  0%, 100% { text-shadow: 0 0 10px #2bffab, 0 0 30px #14a86b, 0 0 60px rgba(43,255,171,0.5); }
+  50% { text-shadow: 0 0 16px #2bffab, 0 0 44px #14a86b, 0 0 90px rgba(43,255,171,0.75); }
 }
 .title.small { font-size: clamp(22px, 6vw, 30px); }
 .title.red {
