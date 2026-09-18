@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Galactic Zombie Assault</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="hud-left">
+      <div id="lives"></div>
+      <div id="shield-wrap"><div id="shield-bar"></div></div>
+    </div>
+    <div id="hud-right">
+      <div id="score">SCORE 0</div>
+      <div id="highscore">BEST 0</div>
+    </div>
+    <div id="planet-name"></div>
+  </div>
+
+  <!-- Start screen -->
+  <div class="screen" id="screen-start">
+    <h1 class="title">GALACTIC<br>ZOMBIE ASSAULT</h1>
+    <p class="subtitle">they came from the dirt.<br>now they've got rockets.</p>
+    <button class="btn" id="btn-start">START GAME</button>
+    <div class="howto">
+      <div class="howto-row"><span class="key">◀ ▶</span> or <span class="key">A D</span> move</div>
+      <div class="howto-row"><span class="key">SPACE</span> shoot &nbsp;·&nbsp; <span class="key">P</span> pause</div>
+      <div class="howto-row touch-only">or use the on-screen controls below</div>
+    </div>
+  </div>
+
+  <!-- Pause screen -->
+  <div class="screen hidden" id="screen-pause">
+    <h2 class="title small">PAUSED</h2>
+    <button class="btn" id="btn-resume">RESUME</button>
+  </div>
+
+  <!-- Level clear screen -->
+  <div class="screen hidden" id="screen-levelclear">
+    <h2 class="title small" id="levelclear-title">PLANET SECURED</h2>
+    <p class="subtitle" id="levelclear-next"></p>
+    <button class="btn" id="btn-continue">CONTINUE</button>
+  </div>
+
+  <!-- Game over screen -->
+  <div class="screen hidden" id="screen-gameover">
+    <h2 class="title small red">OVERRUN</h2>
+    <p class="subtitle" id="gameover-score"></p>
+    <button class="btn" id="btn-restart">TRY AGAIN</button>
+  </div>
+
+  <!-- Touch controls -->
+  <div id="touch-controls">
+    <div id="touch-move">
+      <button id="btn-left" class="touch-btn" aria-label="Move left">◀</button>
+      <button id="btn-right" class="touch-btn" aria-label="Move right">▶</button>
+    </div>
+    <button id="btn-fire" class="touch-btn touch-fire" aria-label="Fire">FIRE</button>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
