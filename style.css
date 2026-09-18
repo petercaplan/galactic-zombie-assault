@@ -1,0 +1,208 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  touch-action: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #10021a 0%, #000 70%);
+}
+
+canvas#game {
+  display: block;
+  background: #000;
+  box-shadow: 0 0 60px rgba(150, 60, 255, 0.35);
+  border-radius: 4px;
+  touch-action: none;
+}
+
+/* ---------- HUD ---------- */
+#hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: max(10px, env(safe-area-inset-top)) 16px 0 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  pointer-events: none;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-shadow: 0 0 8px rgba(0,0,0,0.8);
+}
+
+#hud-left, #hud-right { display: flex; flex-direction: column; gap: 4px; }
+#hud-right { align-items: flex-end; }
+
+#lives { font-size: 18px; letter-spacing: 3px; }
+
+#shield-wrap {
+  width: 90px;
+  height: 6px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(120,220,255,0.4);
+}
+#shield-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #33e0ff, #7dfff0);
+  box-shadow: 0 0 8px #33e0ff;
+  transition: width 0.1s linear;
+}
+
+#score, #highscore { font-size: 14px; opacity: 0.9; }
+#score { font-size: 18px; color: #fff; }
+#highscore { color: #ffd23f; }
+
+#planet-name {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: rgba(255,255,255,0.6);
+  white-space: nowrap;
+}
+
+/* ---------- Screens ---------- */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: rgba(3, 0, 10, 0.82);
+  backdrop-filter: blur(2px);
+  color: #fff;
+  z-index: 10;
+  padding: 24px;
+  gap: 6px;
+}
+.screen.hidden { display: none; }
+
+.title {
+  font-size: clamp(28px, 8vw, 44px);
+  font-weight: 900;
+  letter-spacing: 2px;
+  line-height: 1.15;
+  margin: 0 0 8px 0;
+  color: #7dffb0;
+  text-shadow:
+    0 0 10px #2bffab,
+    0 0 30px #14a86b,
+    0 0 60px rgba(43,255,171,0.5);
+}
+.title.small { font-size: clamp(22px, 6vw, 30px); }
+.title.red {
+  color: #ff5566;
+  text-shadow: 0 0 10px #ff3355, 0 0 30px #b3002d, 0 0 60px rgba(255,50,80,0.5);
+}
+
+.subtitle {
+  font-size: clamp(13px, 3.5vw, 16px);
+  color: rgba(255,255,255,0.75);
+  margin: 0 0 18px 0;
+  line-height: 1.5;
+}
+
+.btn {
+  font-family: inherit;
+  font-size: clamp(16px, 4vw, 18px);
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #06120a;
+  background: linear-gradient(180deg, #7dffb0, #2bd97f);
+  border: none;
+  padding: 14px 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(43,255,171,0.6), inset 0 -3px 0 rgba(0,0,0,0.2);
+  margin-top: 6px;
+}
+.btn:active { transform: translateY(2px); box-shadow: 0 0 10px rgba(43,255,171,0.5); }
+
+.howto {
+  margin-top: 22px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.key {
+  display: inline-block;
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-family: monospace;
+  color: #fff;
+}
+.touch-only { display: none; }
+
+/* ---------- Touch controls ---------- */
+#touch-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 18px;
+  z-index: 5;
+  pointer-events: none;
+}
+#touch-move { display: flex; gap: 14px; pointer-events: auto; }
+
+.touch-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid rgba(125,255,176,0.6);
+  background: rgba(20, 30, 25, 0.55);
+  color: #dfffe9;
+  font-size: 22px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 14px rgba(43,255,171,0.35);
+  pointer-events: auto;
+  touch-action: none;
+}
+.touch-btn:active { background: rgba(125,255,176,0.35); }
+
+.touch-fire {
+  width: 84px;
+  height: 84px;
+  font-size: 14px;
+  border-color: rgba(255,120,120,0.7);
+  color: #ffe3e3;
+  box-shadow: 0 0 18px rgba(255,80,80,0.4);
+}
+.touch-fire:active { background: rgba(255,100,100,0.35); }
+
+/* Show touch controls on touch-capable / coarse-pointer devices */
+@media (pointer: coarse) {
+  #touch-controls { display: flex; }
+  .touch-only { display: block; }
+}
