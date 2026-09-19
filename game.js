@@ -238,12 +238,19 @@
 
   // ---------- Input ----------
   const keys = new Set();
-  let touchDragX = null;
   let dragTouchId = null;
+  let lastDragClientX = null;
+  let touchDragDelta = 0;
+  const TOUCH_SENSITIVITY = 1.6; // >1 so a smaller physical swipe covers the full play width
 
-  function clientXToGameX(clientX) {
+  // Relative dragging: the ship moves by how far your finger travels, not to
+  // wherever your finger currently is. This means you can rest your thumb
+  // anywhere comfortable (e.g. low on the screen, out of the way of the
+  // action) and small swipes there still move the ship across the full
+  // width — your hand never has to hover over the ship or the enemies.
+  function clientXToGameDelta(clientX) {
     const rect = canvas.getBoundingClientRect();
-    return ((clientX - rect.left) / rect.width) * BASE_W;
+    return (clientX / rect.width) * BASE_W;
   }
   // Track the drag finger by its own touch identifier so holding FIRE with
   // a second finger never gets mistaken for (or steals) the move gesture.
@@ -262,19 +269,24 @@
     if (dragTouchId !== null && isTouchStillActive(e, dragTouchId)) return;
     const t = e.changedTouches[0];
     dragTouchId = t.identifier;
-    touchDragX = clientXToGameX(t.clientX);
+    lastDragClientX = t.clientX;
     AudioSys.unlock();
   }, { passive: true });
   canvas.addEventListener('touchmove', (e) => {
     if (state.twoPlayer || dragTouchId === null) return;
-    if (!isTouchStillActive(e, dragTouchId)) { dragTouchId = null; touchDragX = null; return; }
+    if (!isTouchStillActive(e, dragTouchId)) { dragTouchId = null; lastDragClientX = null; return; }
     for (const t of e.changedTouches) {
-      if (t.identifier === dragTouchId) { touchDragX = clientXToGameX(t.clientX); break; }
+      if (t.identifier === dragTouchId) {
+        const deltaClientX = t.clientX - lastDragClientX;
+        touchDragDelta += clientXToGameDelta(deltaClientX) * TOUCH_SENSITIVITY;
+        lastDragClientX = t.clientX;
+        break;
+      }
     }
   }, { passive: true });
   function releaseDragTouch(e) {
     for (const t of e.changedTouches) {
-      if (t.identifier === dragTouchId) { touchDragX = null; dragTouchId = null; break; }
+      if (t.identifier === dragTouchId) { dragTouchId = null; lastDragClientX = null; break; }
     }
   }
   canvas.addEventListener('touchend', releaseDragTouch);
@@ -386,7 +398,12 @@
   let powerups = [];
   let particles = [];
   let floaters = [];
+  let shockwaves = [];
   let formation = { dir: 1, speed: 30, dropAmount: 18 };
+
+  function spawnShockwave(x, y, color, maxR, duration) {
+    shockwaves.push({ x, y, color, maxR, life: duration, maxLife: duration });
+  }
 
   function initBackground() {
     starsFar = [];
@@ -725,6 +742,7 @@
     updatePowerups(dt);
     updateParticles(dt);
     updateFloaters(dt);
+    updateShockwaves(dt);
     checkCollisions();
     checkWaveClear();
 
@@ -756,7 +774,10 @@
     const curSpeed = p.speed * (p.speedTimer > 0 ? 1.6 : 1);
     if (left) p.x -= curSpeed * dt;
     if (right) p.x += curSpeed * dt;
-    if (allowTouchDrag && touchDragX !== null) p.x = touchDragX;
+    if (allowTouchDrag && touchDragDelta !== 0) {
+      p.x += touchDragDelta;
+      touchDragDelta = 0;
+    }
     p.x = Math.max(p.w / 2 + 4, Math.min(BASE_W - p.w / 2 - 4, p.x));
 
     if (p.speedTimer > 0) p.speedTimer -= dt;
@@ -814,10 +835,16 @@
   }
 
   function updateBullets(dt) {
-    for (const b of playerBullets) { b.x += (b.vx || 0) * dt; b.y += b.vy * dt; }
+    for (const b of playerBullets) {
+      b.x += (b.vx || 0) * dt; b.y += b.vy * dt;
+      particles.push({ x: b.x, y: b.y + b.h / 2, vx: 0, vy: 0, life: 0.1, maxLife: 0.1, r: 1.6, color: '#7dffb0' });
+    }
     playerBullets = playerBullets.filter(b => b.y > -20 && b.x > -20 && b.x < BASE_W + 20);
 
-    for (const b of enemyBullets) { b.x += (b.vx || 0) * dt; b.y += b.vy * dt; }
+    for (const b of enemyBullets) {
+      b.x += (b.vx || 0) * dt; b.y += b.vy * dt;
+      particles.push({ x: b.x, y: b.y - b.h / 2, vx: 0, vy: 0, life: 0.1, maxLife: 0.1, r: 1.6, color: '#ff4455' });
+    }
     enemyBullets = enemyBullets.filter(b => b.y < BASE_H + 20 && b.y > -20);
   }
 
@@ -1030,6 +1057,11 @@
     floaters = floaters.filter(f => f.life > 0);
   }
 
+  function updateShockwaves(dt) {
+    for (const s of shockwaves) s.life -= dt;
+    shockwaves = shockwaves.filter(s => s.life > 0);
+  }
+
   function checkCollisions() {
     for (const b of playerBullets) {
       for (const en of enemies) {
@@ -1043,6 +1075,7 @@
             en.alive = false;
             registerKill(def.points, en.x, en.y, def.glow || PLANETS[state.planetIdx].accent);
             spawnParticles(en.x, en.y, def.glow || PLANETS[state.planetIdx].accent, 16, 100);
+            spawnShockwave(en.x, en.y, def.glow || PLANETS[state.planetIdx].accent, 26 * def.scale, 0.3);
             AudioSys.explosion(false);
             if (def.shakeOnDeath) shake(def.shakeOnDeath, 0.15);
             if (Math.random() < 0.2) dropPowerup(en.x, en.y);
@@ -1066,6 +1099,7 @@
           boss.dyingTimer = 0.7;
           triggerHitStop(0.08);
           shake(10, 0.4);
+          spawnShockwave(boss.x, boss.y, boss.kind.glow, 90, 0.5);
           AudioSys.explosion(true);
         }
       }
@@ -1136,6 +1170,7 @@
     triggerFlash('#ffffff', 0.7);
     shake(12, 0.4);
     triggerHitStop(0.05);
+    spawnShockwave(player.x, player.y, '#ffffff', 240, 0.55);
     for (const en of enemies) {
       if (en.alive) {
         en.alive = false;
@@ -1187,6 +1222,7 @@
     drawPlayerBullets();
     drawEnemies();
     drawBoss();
+    drawShockwaves();
     drawPowerups();
     drawFloaters();
     if (state.screen === 'playing' || state.screen === 'paused') {
@@ -1196,6 +1232,8 @@
 
     drawVignette();
     ctx.restore();
+
+    drawScanlines();
 
     if (state.flashAlpha > 0) {
       ctx.save();
@@ -1281,6 +1319,25 @@
     g.addColorStop(1, 'rgba(0,0,0,0.45)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, BASE_W, BASE_H);
+  }
+
+  // Subtle CRT-style scanlines for a "sci-fi screen" feel — one cheap pattern fill per frame.
+  const scanlinePattern = (() => {
+    const tile = document.createElement('canvas');
+    tile.width = 1;
+    tile.height = 3;
+    const tctx = tile.getContext('2d');
+    tctx.fillStyle = 'rgba(0,0,0,0.35)';
+    tctx.fillRect(0, 0, 1, 1);
+    return ctx.createPattern(tile, 'repeat');
+  })();
+
+  function drawScanlines() {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = scanlinePattern;
+    ctx.fillRect(0, 0, BASE_W, BASE_H);
+    ctx.restore();
   }
 
   function drawPlayer(p, kind) {
@@ -1472,6 +1529,9 @@
       ctx.shadowBlur = 12;
       ctx.fillStyle = '#c9ffe0';
       ctx.fillRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(b.x - 1, b.y - b.h / 2, 2, b.h);
     }
     ctx.restore();
   }
@@ -1484,6 +1544,9 @@
       ctx.shadowBlur = 12;
       ctx.fillStyle = '#ffb3ba';
       ctx.fillRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff0f2';
+      ctx.fillRect(b.x - 1, b.y - b.h / 2, 2, b.h);
     }
     ctx.restore();
   }
@@ -1501,6 +1564,22 @@
       ctx.fillText(POWERUP_ICONS[p.type], 0, 0);
       ctx.restore();
     }
+  }
+
+  function drawShockwaves() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of shockwaves) {
+      const t = 1 - s.life / s.maxLife;
+      const r = s.maxR * (0.15 + t * 0.85);
+      ctx.globalAlpha = Math.max(0, (1 - t) * 0.8);
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function drawFloaters() {
