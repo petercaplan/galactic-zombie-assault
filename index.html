@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Galactic Zombie Assault</title>
-<link rel="stylesheet" href="style.css?v=20260919e" />
+<link rel="stylesheet" href="style.css?v=20260919f" />
 </head>
 <body>
 
@@ -67,6 +67,8 @@
   <!-- Level clear screen -->
   <div class="screen hidden" id="screen-levelclear">
     <h2 class="title small" id="levelclear-title">PLANET SECURED</h2>
+    <div id="levelclear-grade"></div>
+    <div id="levelclear-tally"></div>
     <p class="subtitle" id="levelclear-next"></p>
     <button class="btn" id="btn-continue">CONTINUE</button>
   </div>
@@ -74,6 +76,7 @@
   <!-- Game over screen -->
   <div class="screen hidden" id="screen-gameover">
     <h2 class="title small red">OVERRUN</h2>
+    <p class="subtitle" id="gameover-wave"></p>
     <p class="subtitle" id="gameover-score"></p>
     <div id="score-submit-row">
       <input type="text" id="input-name" maxlength="12" placeholder="YOUR NAME" autocomplete="off" />
@@ -95,6 +98,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="game.js?v=20260919e"></script>
+<script src="game.js?v=20260919f"></script>
 </body>
 </html>
