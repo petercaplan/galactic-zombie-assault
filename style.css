@@ -214,6 +214,112 @@ canvas#game {
 }
 .btn:active { transform: translateY(2px); box-shadow: 0 0 10px rgba(43,255,171,0.5); }
 
+.btn-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn-secondary {
+  background: linear-gradient(180deg, #7dd4ff, #2b9dd9);
+  box-shadow: 0 0 20px rgba(43,180,255,0.6), inset 0 -3px 0 rgba(0,0,0,0.2);
+  font-size: clamp(13px, 3.2vw, 15px);
+  padding: 14px 20px;
+}
+
+.howto-2p { color: rgba(125,212,255,0.85); }
+
+.btn-ghost {
+  background: transparent;
+  color: rgba(255,255,255,0.7);
+  box-shadow: none;
+  border: 1px solid rgba(255,255,255,0.3);
+  font-size: 13px;
+  padding: 9px 20px;
+  margin-top: 14px;
+}
+.btn-ghost:active { background: rgba(255,255,255,0.1); }
+
+#leaderboard-list {
+  width: min(320px, 82vw);
+  max-height: 46vh;
+  overflow-y: auto;
+  margin: 10px 0 16px 0;
+  text-align: left;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+}
+.leaderboard-status {
+  padding: 18px;
+  text-align: center;
+  color: rgba(255,255,255,0.6);
+  font-size: 13px;
+}
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.leaderboard-row:last-child { border-bottom: none; }
+.leaderboard-rank {
+  width: 22px;
+  font-weight: 900;
+  color: #ffd23f;
+  flex-shrink: 0;
+}
+.leaderboard-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 1px;
+}
+.leaderboard-score {
+  font-weight: 800;
+  color: #7dffb0;
+}
+.leaderboard-mode {
+  font-size: 10px;
+  color: rgba(255,255,255,0.4);
+  width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+#score-submit-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+#input-name {
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #fff;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  padding: 0 12px;
+  width: 140px;
+  text-align: center;
+}
+#input-name:focus { outline: none; border-color: #7dffb0; }
+#submit-status {
+  min-height: 16px;
+  font-size: 12px;
+  color: #7dffb0;
+  margin-top: 6px;
+}
+
 .howto {
   margin-top: 22px;
   font-size: 12px;
@@ -239,13 +345,14 @@ canvas#game {
   right: 0;
   bottom: max(14px, env(safe-area-inset-bottom));
   display: none;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: flex-end;
   padding: 0 18px;
   z-index: 5;
   pointer-events: none;
 }
-#touch-move { display: flex; gap: 14px; pointer-events: auto; }
+/* Movement is now drag-to-move directly on the play field (see swipe-hint) */
+#touch-move { display: none; }
 
 .touch-btn {
   width: 64px;
