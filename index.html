@@ -39,12 +39,23 @@
   <div class="screen" id="screen-start">
     <h1 class="title">GALACTIC<br>ZOMBIE ASSAULT</h1>
     <p class="subtitle">they came from the dirt.<br>now they've got rockets<br>&amp; they don't die easy.</p>
-    <button class="btn" id="btn-start">START GAME</button>
-    <div class="howto">
-      <div class="howto-row"><span class="key">◀ ▶</span> or <span class="key">A D</span> move</div>
-      <div class="howto-row"><span class="key">SPACE</span> shoot &nbsp;·&nbsp; <span class="key">P</span> pause</div>
-      <div class="howto-row touch-only">or use the on-screen controls below</div>
+    <div class="btn-row">
+      <button class="btn" id="btn-start">1 PLAYER</button>
+      <button class="btn btn-secondary" id="btn-start-2p">2 PLAYER (LOCAL)</button>
     </div>
+    <button class="btn btn-ghost" id="btn-leaderboard">🏆 LEADERBOARD</button>
+    <div class="howto">
+      <div class="howto-row"><span class="key">◀ ▶</span> move &nbsp;·&nbsp; <span class="key">SPACE</span> shoot &nbsp;·&nbsp; <span class="key">P</span> pause</div>
+      <div class="howto-row touch-only">or drag anywhere to move &nbsp;·&nbsp; tap FIRE below</div>
+      <div class="howto-row howto-2p">2P (local): <span class="key">A D</span> move &nbsp;·&nbsp; <span class="key">F</span> shoot</div>
+    </div>
+  </div>
+
+  <!-- Leaderboard screen -->
+  <div class="screen hidden" id="screen-leaderboard">
+    <h2 class="title small">🏆 LEADERBOARD</h2>
+    <div id="leaderboard-list"><div class="leaderboard-status">Loading…</div></div>
+    <button class="btn" id="btn-leaderboard-back">BACK</button>
   </div>
 
   <!-- Pause screen -->
@@ -64,6 +75,11 @@
   <div class="screen hidden" id="screen-gameover">
     <h2 class="title small red">OVERRUN</h2>
     <p class="subtitle" id="gameover-score"></p>
+    <div id="score-submit-row">
+      <input type="text" id="input-name" maxlength="12" placeholder="YOUR NAME" autocomplete="off" />
+      <button class="btn btn-secondary" id="btn-submit-score">SUBMIT SCORE</button>
+    </div>
+    <div id="submit-status"></div>
     <button class="btn" id="btn-restart">TRY AGAIN</button>
   </div>
 
@@ -77,6 +93,8 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="game.js"></script>
 </body>
 </html>
