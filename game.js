@@ -239,22 +239,34 @@
   // ---------- Input ----------
   const keys = new Set();
   let touchDragX = null;
+  let dragTouchId = null;
 
   function clientXToGameX(clientX) {
     const rect = canvas.getBoundingClientRect();
     return ((clientX - rect.left) / rect.width) * BASE_W;
   }
+  // Track the drag finger by its own touch identifier so holding FIRE with
+  // a second finger never gets mistaken for (or steals) the move gesture.
   canvas.addEventListener('touchstart', (e) => {
-    if (state.twoPlayer) return;
-    touchDragX = clientXToGameX(e.touches[0].clientX);
+    if (state.twoPlayer || dragTouchId !== null) return;
+    const t = e.changedTouches[0];
+    dragTouchId = t.identifier;
+    touchDragX = clientXToGameX(t.clientX);
     AudioSys.unlock();
   }, { passive: true });
   canvas.addEventListener('touchmove', (e) => {
-    if (state.twoPlayer) return;
-    touchDragX = clientXToGameX(e.touches[0].clientX);
+    if (state.twoPlayer || dragTouchId === null) return;
+    for (const t of e.changedTouches) {
+      if (t.identifier === dragTouchId) { touchDragX = clientXToGameX(t.clientX); break; }
+    }
   }, { passive: true });
-  canvas.addEventListener('touchend', () => { touchDragX = null; });
-  canvas.addEventListener('touchcancel', () => { touchDragX = null; });
+  function releaseDragTouch(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === dragTouchId) { touchDragX = null; dragTouchId = null; break; }
+    }
+  }
+  canvas.addEventListener('touchend', releaseDragTouch);
+  canvas.addEventListener('touchcancel', releaseDragTouch);
 
   window.addEventListener('keydown', (e) => {
     const tag = document.activeElement && document.activeElement.tagName;
@@ -1166,8 +1178,8 @@
     drawPowerups();
     drawFloaters();
     if (state.screen === 'playing' || state.screen === 'paused') {
-      drawPlayer(player, '🚀');
-      if (player2) drawPlayer(player2, '🛸');
+      drawPlayer(player, 'p1');
+      if (player2) drawPlayer(player2, 'p2');
     }
 
     drawVignette();
@@ -1259,7 +1271,7 @@
     ctx.fillRect(0, 0, BASE_W, BASE_H);
   }
 
-  function drawPlayer(p, emoji) {
+  function drawPlayer(p, kind) {
     const blinking = p.hitFlash > 0 && Math.floor(p.hitFlash * 12) % 2 === 0;
     if (blinking) return;
 
@@ -1275,26 +1287,128 @@
       ctx.restore();
     }
 
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.shadowColor = p.weaponTimer > 0 ? '#ffd23f' : '#7dffb0';
-    ctx.shadowBlur = 14;
-    ctx.font = Math.round(34 * p.sizeMul) + 'px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(emoji, 0, 0);
-    ctx.restore();
+    if (kind === 'p2') drawSaucer(p.x, p.y, p.sizeMul, p.weaponTimer > 0);
+    else drawFighter(p.x, p.y, p.sizeMul, p.weaponTimer > 0);
 
     if (p.droneTimer > 0) {
       ctx.save();
+      ctx.translate(p.x + 22, p.y - 8);
       ctx.shadowColor = '#33e0ff';
       ctx.shadowBlur = 10;
-      ctx.font = '18px serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('🤖', p.x + 22, p.y - 8);
+      ctx.fillStyle = '#8fe0ff';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#0a2a3a';
+      ctx.beginPath();
+      ctx.arc(0, -1, 2.4, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
+  }
+
+  // Hand-drawn vector fighter for Player 1 — always perfectly upright,
+  // unlike a rocket emoji (whose artwork is pre-tilted on some platforms).
+  function drawFighter(x, y, scale, charged) {
+    const t = performance.now() / 1000;
+    const accent = charged ? '#ffd23f' : '#7dffb0';
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    // Engine flame (flickering, additive glow)
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const flameLen = 9 + Math.sin(t * 28) * 3 + Math.random() * 3;
+    const flameGrad = ctx.createLinearGradient(0, 12, 0, 12 + flameLen);
+    flameGrad.addColorStop(0, charged ? 'rgba(255,226,122,0.95)' : 'rgba(140,230,255,0.95)');
+    flameGrad.addColorStop(1, 'rgba(140,230,255,0)');
+    ctx.fillStyle = flameGrad;
+    ctx.beginPath();
+    ctx.moveTo(-4, 12);
+    ctx.lineTo(0, 12 + flameLen);
+    ctx.lineTo(4, 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Hull
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 16;
+    const bodyGrad = ctx.createLinearGradient(0, -17, 0, 14);
+    bodyGrad.addColorStop(0, '#f2fff9');
+    bodyGrad.addColorStop(0.45, accent);
+    bodyGrad.addColorStop(1, '#0d6b3f');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.moveTo(0, -17);
+    ctx.lineTo(6, 6);
+    ctx.lineTo(15, 14);
+    ctx.lineTo(5, 8);
+    ctx.lineTo(4, 14);
+    ctx.lineTo(-4, 14);
+    ctx.lineTo(-5, 8);
+    ctx.lineTo(-15, 14);
+    ctx.lineTo(-6, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Cockpit
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = '#132038';
+    ctx.beginPath();
+    ctx.ellipse(0, -4, 2.6, 4.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.ellipse(-0.8, -6, 0.9, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // Hand-drawn vector saucer for Player 2 (co-op) — same "always upright" guarantee.
+  function drawSaucer(x, y, scale, charged) {
+    const accent = charged ? '#ffd23f' : '#7dd4ff';
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 16;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const glowGrad = ctx.createRadialGradient(0, 6, 1, 0, 6, 16);
+    glowGrad.addColorStop(0, 'rgba(140,220,255,0.55)');
+    glowGrad.addColorStop(1, 'rgba(140,220,255,0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, 7, 15, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    const bodyGrad = ctx.createLinearGradient(0, -4, 0, 8);
+    bodyGrad.addColorStop(0, '#eaf7ff');
+    bodyGrad.addColorStop(1, '#3f6fa8');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, 3, 15, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.ellipse(0, -3, 7.5, 7, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   function drawEnemies() {
@@ -1339,25 +1453,27 @@
   }
 
   function drawPlayerBullets() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     for (const b of playerBullets) {
-      ctx.save();
       ctx.shadowColor = '#7dffb0';
       ctx.shadowBlur = 12;
       ctx.fillStyle = '#c9ffe0';
       ctx.fillRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h);
-      ctx.restore();
     }
+    ctx.restore();
   }
 
   function drawEnemyBullets() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     for (const b of enemyBullets) {
-      ctx.save();
       ctx.shadowColor = '#ff4455';
       ctx.shadowBlur = 12;
       ctx.fillStyle = '#ffb3ba';
       ctx.fillRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h);
-      ctx.restore();
     }
+    ctx.restore();
   }
 
   function drawPowerups() {
@@ -1390,6 +1506,8 @@
   }
 
   function drawParticles() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     for (const p of particles) {
       ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
       ctx.fillStyle = p.color;
@@ -1397,7 +1515,7 @@
       ctx.arc(p.x, p.y, p.r || 2.4, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
 })();
