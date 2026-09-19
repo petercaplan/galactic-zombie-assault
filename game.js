@@ -247,8 +247,19 @@
   }
   // Track the drag finger by its own touch identifier so holding FIRE with
   // a second finger never gets mistaken for (or steals) the move gesture.
+  // Self-healing: every event re-checks whether our claimed touch is still
+  // genuinely active in e.touches. If iOS ever fails to deliver a touchend/
+  // touchcancel for it (can happen on interrupted gestures), we notice it's
+  // gone and release the claim immediately instead of staying stuck forever.
+  function isTouchStillActive(e, id) {
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === id) return true;
+    }
+    return false;
+  }
   canvas.addEventListener('touchstart', (e) => {
-    if (state.twoPlayer || dragTouchId !== null) return;
+    if (state.twoPlayer) return;
+    if (dragTouchId !== null && isTouchStillActive(e, dragTouchId)) return;
     const t = e.changedTouches[0];
     dragTouchId = t.identifier;
     touchDragX = clientXToGameX(t.clientX);
@@ -256,6 +267,7 @@
   }, { passive: true });
   canvas.addEventListener('touchmove', (e) => {
     if (state.twoPlayer || dragTouchId === null) return;
+    if (!isTouchStillActive(e, dragTouchId)) { dragTouchId = null; touchDragX = null; return; }
     for (const t of e.changedTouches) {
       if (t.identifier === dragTouchId) { touchDragX = clientXToGameX(t.clientX); break; }
     }
