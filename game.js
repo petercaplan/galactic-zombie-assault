@@ -370,7 +370,12 @@
     flashAlpha: 0,
     flashColor: '#ffffff',
     twoPlayer: false,
+    killCam: 0,
+    killCamX: BASE_W / 2,
+    killCamY: BASE_H / 2,
   };
+  const KILLCAM_DURATION = 1.0;
+  const BOSS_INTRO_DURATION = 1.7;
   el.highscore.textContent = 'BEST ' + state.highScore;
 
   function makePlayer(x) {
@@ -481,7 +486,6 @@
     if (isBossWave(state.wave)) {
       spawnBoss();
       el.planetName.textContent = PLANETS[state.planetIdx].name + ' — BOSS WAVE';
-      AudioSys.bossRoar();
     } else {
       el.bossWrap.classList.add('hidden');
       const rows = Math.min(3 + Math.floor(state.wave / 3), 6);
@@ -530,10 +534,8 @@
       hitFlash: 0, erraticTimer: 1.5, lastSlamStep: 0,
       kind, emoji: kind.emoji,
       name: kind.names[Math.floor(Math.random() * kind.names.length)],
+      introTimer: BOSS_INTRO_DURATION, roared: false,
     };
-    el.bossWrap.classList.remove('hidden');
-    el.bossName.textContent = boss.name;
-    el.bossFill.style.width = '100%';
   }
 
   function startGame(twoPlayer) {
@@ -711,6 +713,18 @@
     if (state.hitStop > 0) {
       state.hitStop -= dt;
       dt = 0;
+    }
+
+    if (state.killCam > 0) {
+      state.killCam -= dt;
+      dt *= 0.15;
+      if (state.killCam <= 0) {
+        state.killCam = 0;
+        // Guard: an enemy bullet already in flight can still kill the player
+        // during the slow-mo window, ending the game before the cam finishes.
+        // Don't let the delayed level-clear stomp that game-over screen.
+        if (state.screen === 'playing') triggerLevelClear();
+      }
     }
 
     update(dt);
@@ -932,6 +946,22 @@
   function updateBoss(dt) {
     if (!boss) return;
 
+    if (boss.introTimer > 0) {
+      boss.introTimer -= dt;
+      if (!boss.roared && boss.introTimer <= BOSS_INTRO_DURATION - 0.7) {
+        boss.roared = true;
+        AudioSys.bossRoar();
+        shake(14, 0.5);
+      }
+      if (boss.introTimer <= 0) {
+        boss.introTimer = 0;
+        el.bossWrap.classList.remove('hidden');
+        el.bossName.textContent = boss.name;
+        el.bossFill.style.width = '100%';
+      }
+      return;
+    }
+
     if (boss.dying) {
       boss.dyingTimer -= dt;
       if (Math.random() < 0.6) {
@@ -1079,6 +1109,12 @@
             AudioSys.explosion(false);
             if (def.shakeOnDeath) shake(def.shakeOnDeath, 0.15);
             if (Math.random() < 0.2) dropPowerup(en.x, en.y);
+            if (!isBossWave(state.wave) && state.killCam <= 0 && enemies.every(e => !e.alive)) {
+              state.killCam = KILLCAM_DURATION;
+              state.killCamX = en.x;
+              state.killCamY = en.y;
+              spawnShockwave(en.x, en.y, '#ffffff', 70, 0.5);
+            }
           } else {
             AudioSys.hit();
             spawnParticles(en.x, en.y, '#ffffff', 5, 50);
@@ -1190,6 +1226,7 @@
 
   function checkWaveClear() {
     if (state.screen !== 'playing') return;
+    if (state.killCam > 0) return; // let the slow-mo kill cam play out first
     if (isBossWave(state.wave)) {
       if (boss === null) triggerLevelClear();
     } else if (enemies.length && enemies.every(e => !e.alive)) {
@@ -1210,6 +1247,17 @@
     if (state.shakeTime > 0) {
       ctx.translate((Math.random() - 0.5) * state.shakeMag, (Math.random() - 0.5) * state.shakeMag);
     }
+    if (state.killCam > 0) {
+      const elapsed = KILLCAM_DURATION - state.killCam;
+      let zt;
+      if (elapsed < 0.2) zt = elapsed / 0.2;
+      else if (state.killCam < 0.2) zt = state.killCam / 0.2;
+      else zt = 1;
+      const zoomAmt = 1 + 0.5 * zt;
+      ctx.translate(BASE_W / 2, BASE_H / 2);
+      ctx.scale(zoomAmt, zoomAmt);
+      ctx.translate(-state.killCamX, -state.killCamY);
+    }
 
     drawBackground();
     drawNebulae();
@@ -1229,6 +1277,7 @@
       drawPlayer(player, 'p1');
       if (player2) drawPlayer(player2, 'p2');
     }
+    if (boss && boss.introTimer > 0) drawBossIntro(boss);
 
     drawVignette();
     ctx.restore();
@@ -1518,6 +1567,40 @@
       ctx.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
     }
     ctx.fillText(boss.emoji, boss.x, boss.y);
+    ctx.restore();
+  }
+
+  // Dramatic name-slam cutscene before a boss fight begins — the boss stays
+  // hidden off-screen (see updateBoss's introTimer guard) while this plays.
+  function drawBossIntro(b) {
+    const p = 1 - b.introTimer / BOSS_INTRO_DURATION; // 0 -> 1 over the intro
+    const fadeIn = Math.min(1, p / 0.15);
+    const fadeOut = Math.max(0, 1 - Math.max(0, (p - 0.8) / 0.2));
+    const overlayAlpha = fadeIn * fadeOut;
+    if (overlayAlpha <= 0) return;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.6 * overlayAlpha) + ')';
+    ctx.fillRect(0, 0, BASE_W, BASE_H);
+
+    const revealT = Math.min(1, p / 0.35);
+    const c1 = 1.70158, c3 = c1 + 1;
+    const eased = 1 + c3 * Math.pow(revealT - 1, 3) + c1 * Math.pow(revealT - 1, 2);
+    const scale = Math.max(0, eased);
+
+    ctx.globalAlpha = overlayAlpha;
+    ctx.translate(BASE_W / 2, BASE_H * 0.42);
+    ctx.scale(scale, scale);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = b.kind.glow;
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 15px "Segoe UI", sans-serif';
+    ctx.fillText('⚠ BOSS INCOMING ⚠', 0, -32);
+    ctx.font = '900 30px "Segoe UI", sans-serif';
+    ctx.fillStyle = b.kind.glow;
+    ctx.fillText(b.name, 0, 6);
     ctx.restore();
   }
 
