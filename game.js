@@ -39,7 +39,11 @@
     screenGameOver: document.getElementById('screen-gameover'),
     screenLeaderboard: document.getElementById('screen-leaderboard'),
     leaderboardList: document.getElementById('leaderboard-list'),
+    levelClearTitle: document.getElementById('levelclear-title'),
+    levelClearGrade: document.getElementById('levelclear-grade'),
+    levelClearTally: document.getElementById('levelclear-tally'),
     levelClearNext: document.getElementById('levelclear-next'),
+    gameoverWave: document.getElementById('gameover-wave'),
     gameoverScore: document.getElementById('gameover-score'),
     btnStart: document.getElementById('btn-start'),
     btnStart2p: document.getElementById('btn-start-2p'),
@@ -141,6 +145,7 @@
         tone(392, 0.14, 'triangle', 0.18, null, 0);
         tone(494, 0.14, 'triangle', 0.18, null, 0.12);
         tone(587, 0.22, 'triangle', 0.2, null, 0.24);
+        tone(784, 0.3, 'triangle', 0.22, null, 0.36);
       },
       gameOver() { tone(300, 0.5, 'sawtooth', 0.2, 50); },
       bossRoar() { noiseBurst(0.5, 0.4, 900); tone(90, 0.5, 'sawtooth', 0.25, 40); },
@@ -373,9 +378,36 @@
     killCam: 0,
     killCamX: BASE_W / 2,
     killCamY: BASE_H / 2,
+    deathCam: 0,
+    deathCamX: BASE_W / 2,
+    deathCamY: BASE_H / 2,
+    hitsThisWave: 0,
+    waveStartScore: 0,
+    victoryTallyFrom: 0,
+    victoryTallyTo: 0,
+    victoryTallyT: 1,
   };
   const KILLCAM_DURATION = 1.0;
   const BOSS_INTRO_DURATION = 1.7;
+  const DEATHCAM_DURATION = 1.2;
+
+  // Shared "overshoot" bounce ease used by the boss-intro name-slam and the
+  // wave-clear victory-slam title animations.
+  function easeOutBack(t) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  // Shared ease-in/hold/ease-out zoom curve used by both the kill cam and the
+  // death cam so the two cinematics feel like variations of one system.
+  function computeZoomAmt(remaining, duration, rampTime, maxZoom) {
+    const elapsed = duration - remaining;
+    let zt;
+    if (elapsed < rampTime) zt = elapsed / rampTime;
+    else if (remaining < rampTime) zt = remaining / rampTime;
+    else zt = 1;
+    return 1 + maxZoom * zt;
+  }
   el.highscore.textContent = 'BEST ' + state.highScore;
 
   function makePlayer(x) {
@@ -385,6 +417,7 @@
       weaponTimer: 0, shieldTimer: 0, hitFlash: 0, invulnTimer: 0,
       speedTimer: 0, sizeTimer: 0, sizeMul: 1,
       droneTimer: 0, droneCooldown: 0,
+      exploded: false,
     };
   }
 
@@ -480,6 +513,8 @@
     floaters = [];
     state.combo = 0;
     state.comboTimer = 0;
+    state.hitsThisWave = 0;
+    state.waveStartScore = state.score;
     updateComboHUD();
     initPlanetScenery();
 
@@ -546,6 +581,8 @@
     state.planetIdx = 0;
     state.combo = 0;
     state.comboTimer = 0;
+    state.deathCam = 0;
+    state.victoryTallyT = 1;
     state.twoPlayer = !!twoPlayer;
     player = makePlayer(state.twoPlayer ? BASE_W / 2 - 34 : BASE_W / 2);
     player2 = state.twoPlayer ? makePlayer(BASE_W / 2 + 34) : null;
@@ -682,8 +719,10 @@
   }
 
   function loseLife(p) {
+    if (state.deathCam > 0) return;
     if (p.shieldTimer > 0 || p.invulnTimer > 0) return;
     state.lives--;
+    state.hitsThisWave++;
     p.hitFlash = 1.2;
     p.invulnTimer = 1.0;
     shake(7, 0.3);
@@ -691,12 +730,30 @@
     AudioSys.hurt();
     refreshLivesHUD();
     if (state.lives <= 0) {
-      endGame();
+      startDeathCam(p);
     }
+  }
+
+  // Dramatic slow-mo explosion on the fatal hit, before the game-over screen
+  // appears — mirrors the kill cam's dt-slowdown/zoom system (see loop() and
+  // computeZoomAmt), just bigger, redder, and ending in endGame() instead of
+  // triggerLevelClear().
+  function startDeathCam(p) {
+    state.deathCam = DEATHCAM_DURATION;
+    state.deathCamX = p.x;
+    state.deathCamY = p.y;
+    p.exploded = true;
+    shake(16, 0.5);
+    triggerFlash('#ff2233', 0.6);
+    spawnParticles(p.x, p.y, '#ff5533', 30, 160);
+    spawnParticles(p.x, p.y, '#ffaa33', 20, 100);
+    spawnShockwave(p.x, p.y, '#ff3344', 200, DEATHCAM_DURATION - 0.1);
+    AudioSys.explosion(true);
   }
 
   function endGame() {
     el.gameoverScore.textContent = 'SCORE ' + state.score + '   ·   BEST ' + state.highScore;
+    el.gameoverWave.textContent = 'MADE IT TO WAVE ' + state.wave;
     el.btnSubmitScore.disabled = false;
     el.submitStatus.textContent = '';
     setScreen('gameover');
@@ -727,6 +784,15 @@
       }
     }
 
+    if (state.deathCam > 0) {
+      state.deathCam -= dt;
+      dt *= 0.2;
+      if (state.deathCam <= 0) {
+        state.deathCam = 0;
+        if (state.screen === 'playing') endGame();
+      }
+    }
+
     update(dt);
     render();
     requestAnimationFrame(loop);
@@ -738,6 +804,12 @@
 
     if (state.flashAlpha > 0) state.flashAlpha = Math.max(0, state.flashAlpha - dt * 2.6);
     if (state.shakeTime > 0) state.shakeTime -= dt;
+
+    if (state.victoryTallyT < 1) {
+      state.victoryTallyT = Math.min(1, state.victoryTallyT + dt / 0.6);
+      const val = Math.round(state.victoryTallyFrom + (state.victoryTallyTo - state.victoryTallyFrom) * state.victoryTallyT);
+      el.levelClearTally.textContent = 'SCORE ' + val;
+    }
 
     if (state.screen !== 'playing') return;
 
@@ -1234,10 +1306,28 @@
     }
   }
 
+  function computeGrade() {
+    if (state.hitsThisWave === 0) return { text: 'PERFECT', color: '#ffd23f' };
+    if (state.hitsThisWave === 1) return { text: 'GREAT', color: '#7dffb0' };
+    return { text: 'CLEARED', color: '#7dd4ff' };
+  }
+
   function triggerLevelClear() {
     const next = PLANETS[(state.planetIdx + 1) % PLANETS.length].name;
     el.levelClearNext.textContent = 'NEXT: ' + next;
+    el.levelClearTitle.textContent = isBossWave(state.wave) ? 'BOSS DEFEATED' : 'WAVE CLEARED';
+    const grade = computeGrade();
+    el.levelClearGrade.textContent = grade.text;
+    el.levelClearGrade.style.color = grade.color;
+    state.victoryTallyFrom = state.waveStartScore;
+    state.victoryTallyTo = state.score;
+    state.victoryTallyT = 0;
+    el.levelClearTally.textContent = 'SCORE ' + state.victoryTallyFrom;
     setScreen('levelclear');
+    el.levelClearTitle.classList.remove('slam-in');
+    void el.levelClearTitle.offsetWidth; // force reflow so the animation replays every wave
+    el.levelClearTitle.classList.add('slam-in');
+    shake(8, 0.3);
     AudioSys.waveClear();
   }
 
@@ -1248,15 +1338,15 @@
       ctx.translate((Math.random() - 0.5) * state.shakeMag, (Math.random() - 0.5) * state.shakeMag);
     }
     if (state.killCam > 0) {
-      const elapsed = KILLCAM_DURATION - state.killCam;
-      let zt;
-      if (elapsed < 0.2) zt = elapsed / 0.2;
-      else if (state.killCam < 0.2) zt = state.killCam / 0.2;
-      else zt = 1;
-      const zoomAmt = 1 + 0.5 * zt;
+      const zoomAmt = computeZoomAmt(state.killCam, KILLCAM_DURATION, 0.2, 0.5);
       ctx.translate(BASE_W / 2, BASE_H / 2);
       ctx.scale(zoomAmt, zoomAmt);
       ctx.translate(-state.killCamX, -state.killCamY);
+    } else if (state.deathCam > 0) {
+      const zoomAmt = computeZoomAmt(state.deathCam, DEATHCAM_DURATION, 0.25, 0.8);
+      ctx.translate(BASE_W / 2, BASE_H / 2);
+      ctx.scale(zoomAmt, zoomAmt);
+      ctx.translate(-state.deathCamX, -state.deathCamY);
     }
 
     drawBackground();
@@ -1390,6 +1480,7 @@
   }
 
   function drawPlayer(p, kind) {
+    if (p.exploded) return;
     const blinking = p.hitFlash > 0 && Math.floor(p.hitFlash * 12) % 2 === 0;
     if (blinking) return;
 
@@ -1584,9 +1675,7 @@
     ctx.fillRect(0, 0, BASE_W, BASE_H);
 
     const revealT = Math.min(1, p / 0.35);
-    const c1 = 1.70158, c3 = c1 + 1;
-    const eased = 1 + c3 * Math.pow(revealT - 1, 3) + c1 * Math.pow(revealT - 1, 2);
-    const scale = Math.max(0, eased);
+    const scale = Math.max(0, easeOutBack(revealT));
 
     ctx.globalAlpha = overlayAlpha;
     ctx.translate(BASE_W / 2, BASE_H * 0.42);
