@@ -281,21 +281,12 @@ canvas#game {
 }
 .btn:active { transform: translateY(2px); box-shadow: 0 0 10px rgba(43,255,171,0.5); }
 
-.btn-row {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
 .btn-secondary {
   background: linear-gradient(180deg, #7dd4ff, #2b9dd9);
   box-shadow: 0 0 20px rgba(43,180,255,0.6), inset 0 -3px 0 rgba(0,0,0,0.2);
   font-size: clamp(13px, 3.2vw, 15px);
   padding: 14px 20px;
 }
-
-.howto-2p { color: rgba(125,212,255,0.85); }
 
 .btn-ghost {
   background: transparent;
