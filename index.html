@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Galactic Zombie Assault</title>
-<link rel="stylesheet" href="style.css?v=20260920a" />
+<link rel="stylesheet" href="style.css?v=20260920b" />
 </head>
 <body>
 
@@ -46,7 +46,7 @@
     <button class="btn btn-ghost" id="btn-leaderboard">🏆 LEADERBOARD</button>
     <div class="howto">
       <div class="howto-row"><span class="key">◀ ▶</span> move &nbsp;·&nbsp; <span class="key">SPACE</span> shoot &nbsp;·&nbsp; <span class="key">P</span> pause</div>
-      <div class="howto-row touch-only">or drag anywhere to move &nbsp;·&nbsp; tap FIRE below</div>
+      <div class="howto-row touch-only">or drag the pad bottom-left to move &nbsp;·&nbsp; tap FIRE bottom-right</div>
       <div class="howto-row howto-2p">2P (local): <span class="key">A D</span> move &nbsp;·&nbsp; <span class="key">F</span> shoot</div>
     </div>
   </div>
@@ -92,18 +92,16 @@
     <button class="btn" id="btn-restart">TRY AGAIN</button>
   </div>
 
-  <!-- Touch controls -->
+  <!-- Touch controls: a dedicated drag pad bottom-left (mirrors FIRE bottom-right)
+       so your thumb never has to rest over the play field to steer. -->
   <div id="touch-controls">
-    <div id="touch-move">
-      <button id="btn-left" class="touch-btn" aria-label="Move left">◀</button>
-      <button id="btn-right" class="touch-btn" aria-label="Move right">▶</button>
-    </div>
+    <button id="touch-move-zone" class="touch-btn touch-movezone" aria-label="Move">✥</button>
     <button id="btn-fire" class="touch-btn touch-fire" aria-label="Fire">FIRE</button>
   </div>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="game.js?v=20260920a"></script>
+<script src="game.js?v=20260920b"></script>
 </body>
 </html>
