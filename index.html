@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Galactic Zombie Assault</title>
-<link rel="stylesheet" href="style.css?v=20260919f" />
+<link rel="stylesheet" href="style.css?v=20260920a" />
 </head>
 <body>
 
@@ -73,6 +73,12 @@
     <button class="btn" id="btn-continue">CONTINUE</button>
   </div>
 
+  <!-- Upgrade choice screen -->
+  <div class="screen hidden" id="screen-upgrade">
+    <h2 class="title small">CHOOSE YOUR UPGRADE</h2>
+    <div id="upgrade-cards"></div>
+  </div>
+
   <!-- Game over screen -->
   <div class="screen hidden" id="screen-gameover">
     <h2 class="title small red">OVERRUN</h2>
@@ -98,6 +104,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="game.js?v=20260919f"></script>
+<script src="game.js?v=20260920a"></script>
 </body>
 </html>
