@@ -412,14 +412,12 @@ canvas#game {
   right: 0;
   bottom: max(14px, env(safe-area-inset-bottom));
   display: none;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: flex-end;
   padding: 0 18px;
   z-index: 5;
   pointer-events: none;
 }
-/* Movement is now drag-to-move directly on the play field (see swipe-hint) */
-#touch-move { display: none; }
 
 .touch-btn {
   width: 64px;
@@ -448,6 +446,15 @@ canvas#game {
   box-shadow: 0 0 18px rgba(255,80,80,0.4);
 }
 .touch-fire:active { background: rgba(255,100,100,0.35); }
+
+/* Move pad, bottom-left, mirroring FIRE's bottom-right spot — a dedicated
+   drag zone that stays out of the play field so your thumb never covers
+   the action while steering. */
+.touch-movezone {
+  width: 84px;
+  height: 84px;
+  font-size: 30px;
+}
 
 /* Show touch controls on touch-capable / coarse-pointer devices */
 @media (pointer: coarse) {
