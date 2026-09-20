@@ -38,6 +38,8 @@
     screenLevelClear: document.getElementById('screen-levelclear'),
     screenGameOver: document.getElementById('screen-gameover'),
     screenLeaderboard: document.getElementById('screen-leaderboard'),
+    screenUpgrade: document.getElementById('screen-upgrade'),
+    upgradeCards: document.getElementById('upgrade-cards'),
     leaderboardList: document.getElementById('leaderboard-list'),
     levelClearTitle: document.getElementById('levelclear-title'),
     levelClearGrade: document.getElementById('levelclear-grade'),
@@ -326,8 +328,16 @@
   el.btnStart.addEventListener('click', () => startGame(false));
   el.btnStart2p.addEventListener('click', () => startGame(true));
   el.btnResume.addEventListener('click', togglePause);
-  el.btnContinue.addEventListener('click', nextWave);
+  el.btnContinue.addEventListener('click', handleContinueClick);
   el.btnRestart.addEventListener('click', () => startGame(state.twoPlayer));
+
+  el.upgradeCards.addEventListener('click', (e) => {
+    const card = e.target.closest('.upgrade-card');
+    if (!card) return;
+    AudioSys.powerup();
+    applyModifier(card.dataset.id);
+    nextWave();
+  });
 
   el.btnLeaderboard.addEventListener('click', () => {
     setScreen('leaderboard');
@@ -386,6 +396,8 @@
     victoryTallyFrom: 0,
     victoryTallyTo: 0,
     victoryTallyT: 1,
+    mods: {},
+    modPool: [],
   };
   const KILLCAM_DURATION = 1.0;
   const BOSS_INTRO_DURATION = 1.7;
@@ -502,6 +514,19 @@
     speed: '⚡', mega: '🔺', mini: '🔹', drone: '🤖', gem: '💎',
   };
 
+  // ---------- Build-choice modifiers (roguelite upgrade picks between waves) ----------
+  const MODIFIERS = [
+    { id: 'piercing', name: 'PIERCING ROUNDS', desc: 'Bullets punch through the first enemy they hit', icon: '🎯' },
+    { id: 'twinCannons', name: 'TWIN CANNONS', desc: 'Always fire a 3-way spread shot', icon: '🔱' },
+    { id: 'adrenaline', name: 'ADRENALINE', desc: '+25% movement speed, permanently', icon: '⚡' },
+    { id: 'chainReaction', name: 'CHAIN REACTION', desc: 'Kills detonate nearby enemies too', icon: '💥' },
+    { id: 'magnet', name: 'MAGNET FIELD', desc: 'Power-ups drift toward your ship', icon: '🧲' },
+    { id: 'comboFocus', name: 'COMBO FOCUS', desc: 'Combo multiplier lasts much longer', icon: '🔥' },
+    { id: 'reinforcedHull', name: 'REINFORCED HULL', desc: '+1 max life, right now', icon: '🛡️' },
+    { id: 'rapidCells', name: 'RAPID CELLS', desc: 'Fire 20% faster, always', icon: '🔋' },
+    { id: 'secondWind', name: 'SECOND WIND', desc: 'Survive your first fatal hit this run', icon: '💫' },
+  ];
+
   function isBossWave(wave) { return wave % 3 === 0; }
 
   function spawnWave() {
@@ -583,6 +608,8 @@
     state.comboTimer = 0;
     state.deathCam = 0;
     state.victoryTallyT = 1;
+    state.mods = {};
+    state.modPool = MODIFIERS.slice();
     state.twoPlayer = !!twoPlayer;
     player = makePlayer(state.twoPlayer ? BASE_W / 2 - 34 : BASE_W / 2);
     player2 = state.twoPlayer ? makePlayer(BASE_W / 2 + 34) : null;
@@ -602,6 +629,40 @@
     setScreen('playing');
   }
 
+  // Between-wave build choice: skipped once every modifier has been picked.
+  function handleContinueClick() {
+    if (state.modPool.length > 0) showUpgradeChoices();
+    else nextWave();
+  }
+
+  function showUpgradeChoices() {
+    const choices = state.modPool
+      .map(m => ({ m, sort: Math.random() }))
+      .sort((a, b) => a.sort - b.sort)
+      .slice(0, 3)
+      .map(x => x.m);
+    el.upgradeCards.innerHTML = choices.map(m => `
+      <button class="upgrade-card" data-id="${m.id}">
+        <div class="upgrade-icon">${m.icon}</div>
+        <div class="upgrade-text">
+          <div class="upgrade-name">${m.name}</div>
+          <div class="upgrade-desc">${m.desc}</div>
+        </div>
+      </button>
+    `).join('');
+    setScreen('upgrade');
+  }
+
+  function applyModifier(id) {
+    state.mods[id] = true;
+    if (id === 'reinforcedHull') {
+      state.maxLives++;
+      state.lives = Math.min(state.maxLives, state.lives + 1);
+      refreshLivesHUD();
+    }
+    state.modPool = state.modPool.filter(m => m.id !== id);
+  }
+
   function setScreen(name) {
     state.screen = name;
     el.screenStart.classList.toggle('hidden', name !== 'start');
@@ -609,6 +670,7 @@
     el.screenLevelClear.classList.toggle('hidden', name !== 'levelclear');
     el.screenGameOver.classList.toggle('hidden', name !== 'gameover');
     el.screenLeaderboard.classList.toggle('hidden', name !== 'leaderboard');
+    el.screenUpgrade.classList.toggle('hidden', name !== 'upgrade');
     if (name === 'gameover' || name === 'start' || name === 'leaderboard') {
       AudioSys.stopMusic();
       el.bossWrap.classList.add('hidden');
@@ -700,7 +762,7 @@
 
   function registerKill(basePoints, x, y, color) {
     state.combo++;
-    state.comboTimer = 1.4;
+    state.comboTimer = state.mods.comboFocus ? 2.4 : 1.4;
     updateComboHUD();
     const mult = 1 + Math.min(state.combo - 1, 9) * 0.15;
     const pts = Math.round(basePoints * mult);
@@ -730,7 +792,17 @@
     AudioSys.hurt();
     refreshLivesHUD();
     if (state.lives <= 0) {
-      startDeathCam(p);
+      if (state.mods.secondWind && !state.mods.secondWindUsed) {
+        state.mods.secondWindUsed = true;
+        state.lives = 1;
+        p.invulnTimer = 2.0;
+        triggerFlash('#66ffff', 0.6);
+        shake(12, 0.4);
+        AudioSys.powerup();
+        refreshLivesHUD();
+      } else {
+        startDeathCam(p);
+      }
     }
   }
 
@@ -857,7 +929,7 @@
   function updatePlayerGeneric(p, dt, leftKeys, rightKeys, fireKeys, allowTouchDrag) {
     const left = leftKeys.some(k => keys.has(k));
     const right = rightKeys.some(k => keys.has(k));
-    const curSpeed = p.speed * (p.speedTimer > 0 ? 1.6 : 1);
+    const curSpeed = p.speed * (p.speedTimer > 0 ? 1.6 : 1) * (state.mods.adrenaline ? 1.25 : 1);
     if (left) p.x -= curSpeed * dt;
     if (right) p.x += curSpeed * dt;
     if (allowTouchDrag && touchDragDelta !== 0) {
@@ -902,20 +974,21 @@
     const firing = fireKeys.some(k => keys.has(k));
     if (firing && p.cooldown <= 0) {
       fireBullets(p);
-      p.cooldown = p.weaponTimer > 0 ? 0.11 : 0.26;
+      p.cooldown = (p.weaponTimer > 0 ? 0.11 : 0.26) * (state.mods.rapidCells ? 0.8 : 1);
     }
   }
 
   function fireBullets(p) {
     const overcharged = p.weaponTimer > 0;
+    const pierce = state.mods.piercing ? 1 : 0;
     spawnParticles(p.x, p.y - 20, '#c9ffe0', 3, 40);
-    if (overcharged) {
-      playerBullets.push({ x: p.x - 10, y: p.y - 18, vx: -60, vy: -540, w: 5, h: 12 });
-      playerBullets.push({ x: p.x, y: p.y - 22, vx: 0, vy: -580, w: 5, h: 12 });
-      playerBullets.push({ x: p.x + 10, y: p.y - 18, vx: 60, vy: -540, w: 5, h: 12 });
+    if (overcharged || state.mods.twinCannons) {
+      playerBullets.push({ x: p.x - 10, y: p.y - 18, vx: -60, vy: -540, w: 5, h: 12, pierce });
+      playerBullets.push({ x: p.x, y: p.y - 22, vx: 0, vy: -580, w: 5, h: 12, pierce });
+      playerBullets.push({ x: p.x + 10, y: p.y - 18, vx: 60, vy: -540, w: 5, h: 12, pierce });
       AudioSys.laserBig();
     } else {
-      playerBullets.push({ x: p.x, y: p.y - 22, vx: 0, vy: -500, w: 5, h: 14 });
+      playerBullets.push({ x: p.x, y: p.y - 22, vx: 0, vy: -500, w: 5, h: 14, pierce });
       AudioSys.laser();
     }
   }
@@ -1139,7 +1212,20 @@
   }
 
   function updatePowerups(dt) {
-    for (const p of powerups) p.y += p.speed * dt;
+    for (const p of powerups) {
+      p.y += p.speed * dt;
+      if (state.mods.magnet) {
+        let nearest = null, nearestDist = Infinity;
+        for (const pl of getActivePlayers()) {
+          const d = Math.hypot(pl.x - p.x, pl.y - p.y);
+          if (d < nearestDist) { nearestDist = d; nearest = pl; }
+        }
+        if (nearest && nearestDist < 160 && nearestDist > 1) {
+          p.x += (nearest.x - p.x) / nearestDist * 220 * dt;
+          p.y += (nearest.y - p.y) / nearestDist * 220 * dt;
+        }
+      }
+    }
     powerups = powerups.filter(p => p.y < BASE_H + 20);
   }
 
@@ -1169,7 +1255,6 @@
       for (const en of enemies) {
         if (!en.alive) continue;
         if (rectHit(b, en)) {
-          b.dead = true;
           en.hp--;
           en.hitFlash = 0.15;
           const def = ENEMY_TYPES[en.type];
@@ -1181,6 +1266,20 @@
             AudioSys.explosion(false);
             if (def.shakeOnDeath) shake(def.shakeOnDeath, 0.15);
             if (Math.random() < 0.2) dropPowerup(en.x, en.y);
+            if (state.mods.chainReaction) {
+              for (const other of enemies) {
+                if (other === en || !other.alive) continue;
+                const dx = other.x - en.x, dy = other.y - en.y;
+                if (dx * dx + dy * dy < 3600) {
+                  other.alive = false;
+                  const odef = ENEMY_TYPES[other.type];
+                  registerKill(Math.round(odef.points * 0.5), other.x, other.y, odef.glow || PLANETS[state.planetIdx].accent);
+                  spawnParticles(other.x, other.y, odef.glow || PLANETS[state.planetIdx].accent, 10, 80);
+                  spawnShockwave(other.x, other.y, odef.glow || PLANETS[state.planetIdx].accent, 20, 0.25);
+                  AudioSys.hit();
+                }
+              }
+            }
             if (!isBossWave(state.wave) && state.killCam <= 0 && enemies.every(e => !e.alive)) {
               state.killCam = KILLCAM_DURATION;
               state.killCamX = en.x;
@@ -1191,7 +1290,12 @@
             AudioSys.hit();
             spawnParticles(en.x, en.y, '#ffffff', 5, 50);
           }
-          break;
+          if (b.pierce > 0) {
+            b.pierce--;
+          } else {
+            b.dead = true;
+            break;
+          }
         }
       }
       if (b.dead) continue;
