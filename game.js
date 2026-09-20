@@ -54,8 +54,7 @@
     btnResume: document.getElementById('btn-resume'),
     btnContinue: document.getElementById('btn-continue'),
     btnRestart: document.getElementById('btn-restart'),
-    btnLeft: document.getElementById('btn-left'),
-    btnRight: document.getElementById('btn-right'),
+    touchMoveZone: document.getElementById('touch-move-zone'),
     btnFire: document.getElementById('btn-fire'),
     inputName: document.getElementById('input-name'),
     btnSubmitScore: document.getElementById('btn-submit-score'),
@@ -251,10 +250,10 @@
   const TOUCH_SENSITIVITY = 1.6; // >1 so a smaller physical swipe covers the full play width
 
   // Relative dragging: the ship moves by how far your finger travels, not to
-  // wherever your finger currently is. This means you can rest your thumb
-  // anywhere comfortable (e.g. low on the screen, out of the way of the
-  // action) and small swipes there still move the ship across the full
-  // width — your hand never has to hover over the ship or the enemies.
+  // wherever your finger currently is. Combined with a dedicated move pad
+  // (bottom-left, mirroring FIRE bottom-right) rather than the whole canvas,
+  // your thumb rests in a corner and never covers the play field while
+  // steering — small swipes there still move the ship across the full width.
   function clientXToGameDelta(clientX) {
     const rect = canvas.getBoundingClientRect();
     return (clientX / rect.width) * BASE_W;
@@ -271,7 +270,11 @@
     }
     return false;
   }
-  canvas.addEventListener('touchstart', (e) => {
+  // Only the dedicated move pad can *start* a drag (not the whole canvas) —
+  // that's what keeps your thumb off the play field. Once a drag is claimed,
+  // touchmove/touchend/touchcancel listen on window and filter by the touch's
+  // own identifier, so tracking keeps working wherever the finger wanders.
+  el.touchMoveZone.addEventListener('touchstart', (e) => {
     if (state.twoPlayer) return;
     if (dragTouchId !== null && isTouchStillActive(e, dragTouchId)) return;
     const t = e.changedTouches[0];
@@ -279,7 +282,7 @@
     lastDragClientX = t.clientX;
     AudioSys.unlock();
   }, { passive: true });
-  canvas.addEventListener('touchmove', (e) => {
+  window.addEventListener('touchmove', (e) => {
     if (state.twoPlayer || dragTouchId === null) return;
     if (!isTouchStillActive(e, dragTouchId)) { dragTouchId = null; lastDragClientX = null; return; }
     for (const t of e.changedTouches) {
@@ -296,8 +299,8 @@
       if (t.identifier === dragTouchId) { dragTouchId = null; lastDragClientX = null; break; }
     }
   }
-  canvas.addEventListener('touchend', releaseDragTouch);
-  canvas.addEventListener('touchcancel', releaseDragTouch);
+  window.addEventListener('touchend', releaseDragTouch);
+  window.addEventListener('touchcancel', releaseDragTouch);
 
   window.addEventListener('keydown', (e) => {
     const tag = document.activeElement && document.activeElement.tagName;
@@ -321,8 +324,6 @@
     button.addEventListener('mouseup', end);
     button.addEventListener('mouseleave', end);
   }
-  bindHold(el.btnLeft, 'ArrowLeft');
-  bindHold(el.btnRight, 'ArrowRight');
   bindHold(el.btnFire, ' ');
 
   el.btnStart.addEventListener('click', () => startGame(false));
