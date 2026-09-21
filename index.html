@@ -6,12 +6,24 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Galactic Zombie Assault</title>
-<link rel="stylesheet" href="style.css?v=20260921a" />
+<link rel="stylesheet" href="style.css?v=20260921b" />
 </head>
 <body>
 
 <div id="stage">
   <canvas id="game"></canvas>
+
+  <!-- One-time opening hook, shown only before the player has ever seen it
+       (localStorage flag) — never blocks a replay after that. -->
+  <div id="intro-crawl" class="hidden">
+    <div class="intro-crawl-inner">
+      <p class="intro-crawl-tag">TRANSMISSION INTERCEPTED…</p>
+      <p>They came from the dirt. Then the sky. Now every world we know.</p>
+      <p>Something is coordinating them world to world. Command calls it <strong>THE OVERMIND</strong>.</p>
+      <p>You're the last signal we've got. Don't go quiet.</p>
+      <p class="intro-crawl-hint">TAP OR PRESS ANY KEY TO CONTINUE</p>
+    </div>
+  </div>
 
   <!-- HUD -->
   <div id="hud">
@@ -40,6 +52,11 @@
   <div class="screen" id="screen-start">
     <h1 class="title">GALACTIC<br>ZOMBIE ASSAULT</h1>
     <p class="subtitle">they came from the dirt.<br>now they've got rockets<br>&amp; they don't die easy.</p>
+    <div id="core-select">
+      <div class="core-select-label">SHIP CORE</div>
+      <div id="core-buttons"></div>
+      <div id="core-desc"></div>
+    </div>
     <button class="btn" id="btn-start">START</button>
     <button class="btn btn-ghost" id="btn-leaderboard">🏆 LEADERBOARD</button>
     <div class="howto">
@@ -67,6 +84,7 @@
     <div id="levelclear-grade"></div>
     <div id="levelclear-tally"></div>
     <p class="subtitle" id="levelclear-next"></p>
+    <p class="lore-line" id="levelclear-lore"></p>
     <button class="btn" id="btn-continue">CONTINUE</button>
   </div>
 
@@ -79,6 +97,7 @@
   <!-- Game over screen -->
   <div class="screen hidden" id="screen-gameover">
     <h2 class="title small red">OVERRUN</h2>
+    <p class="lore-line" id="gameover-cause"></p>
     <p class="subtitle" id="gameover-wave"></p>
     <p class="subtitle" id="gameover-score"></p>
     <div id="score-submit-row">
@@ -101,6 +120,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="game.js?v=20260921a"></script>
+<script src="game.js?v=20260921b"></script>
 </body>
 </html>
