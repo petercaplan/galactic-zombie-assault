@@ -25,6 +25,7 @@
   const el = {
     lives: document.getElementById('lives'),
     shieldBar: document.getElementById('shield-bar'),
+    overdriveBar: document.getElementById('overdrive-bar'),
     combo: document.getElementById('combo-display'),
     score: document.getElementById('score'),
     highscore: document.getElementById('highscore'),
@@ -58,6 +59,8 @@
     inputName: document.getElementById('input-name'),
     btnSubmitScore: document.getElementById('btn-submit-score'),
     submitStatus: document.getElementById('submit-status'),
+    btnShareCard: document.getElementById('btn-share-card'),
+    resultCanvas: document.getElementById('result-card-canvas'),
   };
 
   // ============================================================
@@ -217,13 +220,18 @@
   })();
 
   // ---------- Planets (visual themes, cycle + escalate) ----------
+  // Each planet now also carries a "twist" — a real gameplay rule change, not
+  // just a palette swap, so the run feels mechanically different world to world.
   const PLANETS = [
-    { name: 'MARS OUTPOST',        top: '#3a0f0f', bottom: '#0a0202', accent: '#ff5533', ring: false },
-    { name: 'EUROPA ICE FIELDS',   top: '#04263a', bottom: '#010509', accent: '#33ccff', ring: false },
-    { name: 'TITAN METHANE SEAS',  top: '#3a2a04', bottom: '#0a0700', accent: '#ffb833', ring: true  },
-    { name: 'NEBULA RIFT',         top: '#2a0440', bottom: '#08010d', accent: '#cc55ff', ring: true  },
-    { name: 'THE VOID',            top: '#210000', bottom: '#000000', accent: '#ff3355', ring: false },
+    { name: 'MARS OUTPOST',        top: '#3a0f0f', bottom: '#0a0202', accent: '#ff5533', ring: false, twist: 'none' },
+    { name: 'EUROPA ICE FIELDS',   top: '#04263a', bottom: '#010509', accent: '#33ccff', ring: false, twist: 'iceDrift' },
+    { name: 'TITAN METHANE SEAS',  top: '#3a2a04', bottom: '#0a0700', accent: '#ffb833', ring: true,  twist: 'meteors' },
+    { name: 'NEBULA RIFT',         top: '#2a0440', bottom: '#08010d', accent: '#cc55ff', ring: true,  twist: 'turbulence' },
+    { name: 'THE VOID',            top: '#210000', bottom: '#000000', accent: '#ff3355', ring: false, twist: 'blackout' },
   ];
+  const TWIST_LABELS = {
+    iceDrift: 'ICE DRIFT', meteors: 'METEOR SHOWER', turbulence: 'TURBULENCE', blackout: 'BLACKOUT',
+  };
 
   // ---------- Enemy types ----------
   const ENEMY_TYPES = {
@@ -362,6 +370,20 @@
       });
   });
 
+  el.btnShareCard.addEventListener('click', () => {
+    drawResultCard();
+    el.resultCanvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'galactic-zombie-assault-score.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }, 'image/png');
+  });
+
   function handleEnter() {
     if (state.screen === 'start') startGame();
     else if (state.screen === 'levelclear') nextWave();
@@ -400,6 +422,12 @@
     bossCamX: BASE_W / 2,
     bossCamY: BASE_H / 2,
     warpCam: 0,
+    bossesDefeated: 0,
+    overdriveCharge: 0,
+    overdriveFlash: 0,
+    blackoutTimer: 4,
+    blackoutPulse: 0,
+    meteorTimer: 2,
   };
   const KILLCAM_DURATION = 1.0;
   const BOSS_INTRO_DURATION = 1.7;
@@ -407,6 +435,7 @@
   const BOSSCAM_DURATION = 1.5;
   const BOSSCAM_SLOWMO = 0.25;
   const WARPCAM_DURATION = 0.7;
+  const OVERDRIVE_DURATION = 5;
 
   // Shared "overshoot" bounce ease used by the boss-intro name-slam and the
   // wave-clear victory-slam title animations.
@@ -430,10 +459,11 @@
   function makePlayer(x) {
     return {
       x, y: BASE_H - 90, w: 34, h: 34,
-      speed: 230, cooldown: 0,
+      speed: 230, cooldown: 0, vx: 0,
       weaponTimer: 0, shieldTimer: 0, hitFlash: 0, invulnTimer: 0,
       speedTimer: 0, sizeTimer: 0, sizeMul: 1,
       droneTimer: 0, droneCooldown: 0,
+      overdriveTimer: 0,
       exploded: false,
     };
   }
@@ -451,6 +481,7 @@
   let particles = [];
   let floaters = [];
   let shockwaves = [];
+  let meteors = [];
   let formation = { dir: 1, speed: 30, dropAmount: 18 };
 
   function spawnShockwave(x, y, color, maxR, duration) {
@@ -542,16 +573,28 @@
     enemyBullets = [];
     powerups = [];
     floaters = [];
+    meteors = [];
     state.combo = 0;
     state.comboTimer = 0;
     state.hitsThisWave = 0;
     state.waveStartScore = state.score;
+    state.blackoutPulse = 0;
+    state.blackoutTimer = 3 + Math.random() * 3;
+    state.meteorTimer = 1.5 + Math.random();
     updateComboHUD();
     initPlanetScenery();
 
+    // meteors/turbulence only affect the regular formation, so their label
+    // would be misleading during a boss wave — only show twists that still
+    // actually apply (ice drift and blackout both run regardless of boss).
+    const twist = PLANETS[state.planetIdx].twist;
+    const twistAppliesOnBoss = twist === 'iceDrift' || twist === 'blackout';
+    const showTwist = twist !== 'none' && (!isBossWave(state.wave) || twistAppliesOnBoss);
+    const twistSuffix = showTwist ? ' · ' + TWIST_LABELS[twist] : '';
+
     if (isBossWave(state.wave)) {
       spawnBoss();
-      el.planetName.textContent = PLANETS[state.planetIdx].name + ' — BOSS WAVE';
+      el.planetName.textContent = PLANETS[state.planetIdx].name + ' — BOSS WAVE' + twistSuffix;
     } else {
       el.bossWrap.classList.add('hidden');
       const rows = Math.min(3 + Math.floor(state.wave / 3), 6);
@@ -582,8 +625,12 @@
       formation.dir = 1;
       formation.speed = 26 + state.wave * 4;
       formation.dropAmount = 16 + Math.min(state.wave, 10);
+      if (twist === 'turbulence') {
+        formation.speed *= 1.35;
+        formation.dropAmount *= 1.2;
+      }
 
-      el.planetName.textContent = PLANETS[state.planetIdx].name + ' — WAVE ' + state.wave;
+      el.planetName.textContent = PLANETS[state.planetIdx].name + ' — WAVE ' + state.wave + twistSuffix;
     }
   }
 
@@ -616,9 +663,16 @@
     state.deathCam = 0;
     state.victoryTallyT = 1;
     state.mods = {};
+    state.bossesDefeated = 0;
+    state.overdriveCharge = 0;
+    state.overdriveFlash = 0;
+    state.maxLives = 5;
+    meteors = [];
     player = makePlayer(BASE_W / 2);
     el.score.textContent = 'SCORE 0';
     el.shieldBar.style.width = '0%';
+    el.overdriveBar.style.width = '0%';
+    el.overdriveBar.classList.remove('ready');
     refreshLivesHUD();
     updateComboHUD();
     spawnWave();
@@ -774,6 +828,10 @@
     const pts = Math.round(basePoints * mult);
     addScore(pts);
     spawnFloater(x, y, '+' + pts, state.combo > 1 ? '#ffd23f' : '#ffffff', state.combo > 3);
+    if (player.overdriveTimer <= 0 && state.overdriveCharge < 100) {
+      state.overdriveCharge = Math.min(100, state.overdriveCharge + 8);
+      refreshOverdriveHUD();
+    }
   }
 
   function addScore(n) {
@@ -836,6 +894,102 @@
     el.submitStatus.textContent = '';
     setScreen('gameover');
     AudioSys.gameOver();
+  }
+
+  function rankForWave(wave) {
+    if (wave >= 18) return 'GALACTIC LEGEND';
+    if (wave >= 12) return 'FLEET COMMANDER';
+    if (wave >= 6) return 'VETERAN PILOT';
+    return 'ROOKIE PILOT';
+  }
+
+  // A shareable end-of-run "trading card" rendered to its own offscreen
+  // canvas (kept separate from the live game canvas) so a kid can save and
+  // show off a result — no server, no login, just a downloaded PNG.
+  function drawResultCard() {
+    const rc = el.resultCanvas.getContext('2d');
+    const W = el.resultCanvas.width, H = el.resultCanvas.height;
+    const planet = PLANETS[state.planetIdx];
+    const name = (localStorage.getItem('gza_playername') || 'PILOT').toUpperCase();
+
+    const bg = rc.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#0a0212');
+    bg.addColorStop(0.55, planet.top);
+    bg.addColorStop(1, '#000000');
+    rc.fillStyle = bg;
+    rc.fillRect(0, 0, W, H);
+
+    // Starfield
+    rc.fillStyle = '#ffffff';
+    for (let i = 0; i < 120; i++) {
+      const sx = (i * 137.5) % W;
+      const sy = (i * 91.3 + (i % 7) * 40) % H;
+      rc.globalAlpha = 0.25 + ((i * 13) % 10) / 15;
+      rc.beginPath();
+      rc.arc(sx, sy, 1 + (i % 3) * 0.5, 0, Math.PI * 2);
+      rc.fill();
+    }
+    rc.globalAlpha = 1;
+
+    // Planet glow accent
+    const pg = rc.createRadialGradient(W / 2, 130, 10, W / 2, 130, 220);
+    pg.addColorStop(0, planet.accent + 'aa');
+    pg.addColorStop(1, planet.accent + '00');
+    rc.fillStyle = pg;
+    rc.fillRect(0, 0, W, 300);
+
+    rc.textAlign = 'center';
+    rc.fillStyle = '#7dffb0';
+    rc.shadowColor = '#2bffab';
+    rc.shadowBlur = 20;
+    rc.font = '900 34px "Segoe UI", sans-serif';
+    rc.fillText('GALACTIC ZOMBIE ASSAULT', W / 2, 110);
+
+    rc.shadowBlur = 0;
+    rc.fillStyle = 'rgba(255,255,255,0.7)';
+    rc.font = '700 16px "Segoe UI", sans-serif';
+    rc.fillText(planet.name + ' · ' + new Date().toLocaleDateString(), W / 2, 145);
+
+    rc.shadowColor = '#ffd23f';
+    rc.shadowBlur = 24;
+    rc.fillStyle = '#ffd23f';
+    rc.font = '900 96px "Segoe UI", sans-serif';
+    rc.fillText(String(state.score), W / 2, 320);
+    rc.shadowBlur = 0;
+    rc.fillStyle = 'rgba(255,255,255,0.65)';
+    rc.font = '700 18px "Segoe UI", sans-serif';
+    rc.fillText('FINAL SCORE', W / 2, 355);
+
+    rc.shadowColor = planet.accent;
+    rc.shadowBlur = 16;
+    rc.fillStyle = '#ffffff';
+    rc.font = '900 28px "Segoe UI", sans-serif';
+    rc.fillText(rankForWave(state.wave), W / 2, 430);
+    rc.shadowBlur = 0;
+
+    const stats = [
+      ['WAVE REACHED', String(state.wave)],
+      ['BOSSES DEFEATED', String(state.bossesDefeated)],
+      ['PILOT', name],
+    ];
+    let sy = 500;
+    for (const [label, value] of stats) {
+      rc.fillStyle = 'rgba(255,255,255,0.55)';
+      rc.font = '700 15px "Segoe UI", sans-serif';
+      rc.fillText(label, W / 2, sy);
+      rc.fillStyle = '#7dd4ff';
+      rc.font = '900 26px "Segoe UI", sans-serif';
+      rc.fillText(value, W / 2, sy + 32);
+      sy += 90;
+    }
+
+    rc.strokeStyle = 'rgba(125,255,176,0.5)';
+    rc.lineWidth = 3;
+    rc.strokeRect(14, 14, W - 28, H - 28);
+
+    rc.fillStyle = 'rgba(255,255,255,0.4)';
+    rc.font = '700 13px "Segoe UI", sans-serif';
+    rc.fillText('petercaplan.github.io/galactic-zombie-assault', W / 2, H - 26);
   }
 
   // ---------- Update loop ----------
@@ -905,6 +1059,8 @@
     updateBullets(dt);
     updateEnemies(dt);
     updateBoss(dt);
+    updateMeteors(dt);
+    updateBlackout(dt);
     updatePowerups(dt);
     updateParticles(dt);
     updateFloaters(dt);
@@ -940,8 +1096,19 @@
     const left = MOVE_LEFT_KEYS.some(k => keys.has(k));
     const right = MOVE_RIGHT_KEYS.some(k => keys.has(k));
     const curSpeed = p.speed * (p.speedTimer > 0 ? 1.6 : 1) * (state.mods.adrenaline ? 1.25 : 1);
-    if (left) p.x -= curSpeed * dt;
-    if (right) p.x += curSpeed * dt;
+    if (PLANETS[state.planetIdx].twist === 'iceDrift') {
+      // Ice Drift: keyboard movement accelerates/slides instead of moving
+      // instantly, like steering on a frictionless surface. Touch drag is
+      // unaffected (it's already a relative delta, so it feels fine either way).
+      let target = 0;
+      if (left) target -= curSpeed;
+      if (right) target += curSpeed;
+      p.vx += (target - p.vx) * Math.min(1, dt * 5);
+      p.x += p.vx * dt;
+    } else {
+      if (left) p.x -= curSpeed * dt;
+      if (right) p.x += curSpeed * dt;
+    }
     if (touchDragDelta !== 0) {
       p.x += touchDragDelta;
       touchDragDelta = 0;
@@ -955,6 +1122,14 @@
     }
     p.w = 34 * p.sizeMul;
     p.h = 34 * p.sizeMul;
+
+    if (p.overdriveTimer > 0) {
+      p.overdriveTimer -= dt;
+      // Risk/reward drawback: Overdrive's raw power comes with a bigger,
+      // easier-to-hit ship, on top of whatever size power-up is active.
+      p.w *= 1.15;
+      p.h *= 1.15;
+    }
 
     if (p.droneTimer > 0) {
       p.droneTimer -= dt;
@@ -983,15 +1158,36 @@
     if (p.cooldown > 0) p.cooldown -= dt;
     const firing = FIRE_KEYS.some(k => keys.has(k));
     if (firing && p.cooldown <= 0) {
+      if (state.overdriveCharge >= 100 && p.overdriveTimer <= 0) triggerOverdrive(p);
       fireBullets(p);
-      p.cooldown = (p.weaponTimer > 0 ? 0.11 : 0.26) * (state.mods.rapidCells ? 0.8 : 1);
+      const overdriveFireMul = p.overdriveTimer > 0 ? 0.6 : 1;
+      p.cooldown = (p.weaponTimer > 0 ? 0.11 : 0.26) * (state.mods.rapidCells ? 0.8 : 1) * overdriveFireMul;
     }
   }
 
+  // Overdrive: a risk/reward meter charged by kills (see registerKill). Once
+  // full, your next shot burns it for a few seconds of triple-shot + faster
+  // fire — but the ship also grows into a bigger target for the duration.
+  function triggerOverdrive(p) {
+    state.overdriveCharge = 0;
+    p.overdriveTimer = OVERDRIVE_DURATION;
+    refreshOverdriveHUD();
+    triggerFlash('#ffb833', 0.5);
+    shake(10, 0.3);
+    spawnFloater(p.x, p.y - 30, 'OVERDRIVE!', '#ffd23f', true);
+    spawnParticles(p.x, p.y, '#ffb833', 24, 140);
+    AudioSys.powerup();
+  }
+
+  function refreshOverdriveHUD() {
+    el.overdriveBar.style.width = state.overdriveCharge + '%';
+    el.overdriveBar.classList.toggle('ready', state.overdriveCharge >= 100);
+  }
+
   function fireBullets(p) {
-    const overcharged = p.weaponTimer > 0;
+    const overcharged = p.weaponTimer > 0 || p.overdriveTimer > 0;
     const pierce = state.mods.piercing ? 1 : 0;
-    spawnParticles(p.x, p.y - 20, '#c9ffe0', 3, 40);
+    spawnParticles(p.x, p.y - 20, p.overdriveTimer > 0 ? '#ffd23f' : '#c9ffe0', 3, 40);
     if (overcharged || state.mods.twinCannons) {
       playerBullets.push({ x: p.x - 10, y: p.y - 18, vx: -60, vy: -540, w: 5, h: 12, pierce });
       playerBullets.push({ x: p.x, y: p.y - 22, vx: 0, vy: -580, w: 5, h: 12, pierce });
@@ -1268,8 +1464,50 @@
     dropPowerup(boss.x + 20, boss.y);
     shake(14, 0.5);
     triggerFlash('#ffffff', 0.5);
+    state.bossesDefeated++;
     boss = null;
     el.bossWrap.classList.add('hidden');
+  }
+
+  // Titan's twist: intermittent falling rock hazards, independent of the
+  // enemy formation — pure environmental danger, dodgeable, no points for it.
+  function updateMeteors(dt) {
+    if (PLANETS[state.planetIdx].twist !== 'meteors' || isBossWave(state.wave)) {
+      meteors = meteors.filter(m => m.y < BASE_H + 40);
+      return;
+    }
+    state.meteorTimer -= dt;
+    if (state.meteorTimer <= 0) {
+      state.meteorTimer = 1.1 + Math.random() * 1.1;
+      const r = 12 + Math.random() * 8;
+      meteors.push({
+        x: 30 + Math.random() * (BASE_W - 60), y: -30,
+        vx: (Math.random() - 0.5) * 40, vy: 130 + Math.random() * 60,
+        r, w: r * 1.6, h: r * 1.6, rot: Math.random() * Math.PI * 2, spin: (Math.random() - 0.5) * 4,
+      });
+    }
+    for (const m of meteors) {
+      m.x += m.vx * dt; m.y += m.vy * dt; m.rot += m.spin * dt;
+      if (Math.random() < 0.5) {
+        particles.push({ x: m.x, y: m.y - m.r * 0.6, vx: 0, vy: 0, life: 0.2, maxLife: 0.2, r: m.r * 0.25, color: '#ff8833' });
+      }
+    }
+    meteors = meteors.filter(m => m.y < BASE_H + 40);
+  }
+
+  // The Void's twist: brief, unpredictable darkness pulses for pure tension —
+  // no mechanical penalty beyond obscuring the view for a moment.
+  function updateBlackout(dt) {
+    if (PLANETS[state.planetIdx].twist !== 'blackout') { state.blackoutPulse = 0; return; }
+    if (state.blackoutPulse > 0) {
+      state.blackoutPulse -= dt;
+    } else {
+      state.blackoutTimer -= dt;
+      if (state.blackoutTimer <= 0) {
+        state.blackoutPulse = 0.4;
+        state.blackoutTimer = 3.5 + Math.random() * 3;
+      }
+    }
   }
 
   function updatePowerups(dt) {
@@ -1399,6 +1637,32 @@
       }
     }
     powerups = powerups.filter(pu => !pu.dead);
+
+    for (const m of meteors) {
+      if (m.dead) continue;
+      if (rectHit(m, player)) {
+        m.dead = true;
+        spawnParticles(m.x, m.y, '#ff8833', 16, 100);
+        spawnShockwave(m.x, m.y, '#ff8833', 30, 0.3);
+        AudioSys.explosion(false);
+        loseLife(player);
+        continue;
+      }
+      for (const b of playerBullets) {
+        if (b.dead) continue;
+        if (rectHit(b, m)) {
+          b.dead = true;
+          m.dead = true;
+          registerKill(20, m.x, m.y, '#ff8833');
+          spawnParticles(m.x, m.y, '#ff8833', 16, 100);
+          spawnShockwave(m.x, m.y, '#ff8833', 26, 0.3);
+          AudioSys.explosion(false);
+          break;
+        }
+      }
+    }
+    playerBullets = playerBullets.filter(b => !b.dead);
+    meteors = meteors.filter(m => !m.dead);
   }
 
   function dropPowerup(x, y) {
@@ -1510,6 +1774,7 @@
     drawPlayerBullets();
     drawEnemies();
     drawBoss();
+    drawMeteors();
     drawShockwaves();
     drawPowerups();
     drawFloaters();
@@ -1521,6 +1786,7 @@
 
     drawVignette();
     if (state.screen === 'playing' && state.lives === 1) drawLowLifePulse();
+    if (state.blackoutPulse > 0) drawBlackoutPulse();
     ctx.restore();
 
     drawScanlines();
@@ -1622,6 +1888,40 @@
     ctx.fillRect(0, 0, BASE_W, BASE_H);
   }
 
+  function drawMeteors() {
+    for (const m of meteors) {
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      ctx.rotate(m.rot);
+      ctx.shadowColor = '#ff8833';
+      ctx.shadowBlur = 14;
+      const g = ctx.createRadialGradient(-m.r * 0.3, -m.r * 0.3, 1, 0, 0, m.r);
+      g.addColorStop(0, '#a68a6e');
+      g.addColorStop(0.7, '#6b4a32');
+      g.addColorStop(1, '#3a2417');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      const spikes = 7;
+      for (let i = 0; i < spikes; i++) {
+        const ang = (i / spikes) * Math.PI * 2;
+        const rr = m.r * (0.75 + (i % 3 === 0 ? 0.25 : 0));
+        const px = Math.cos(ang) * rr, py = Math.sin(ang) * rr;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // The Void's twist: a quick near-black fade over the whole screen, timed
+  // via updateBlackout()'s random-interval pulse — pure atmosphere/tension.
+  function drawBlackoutPulse() {
+    const alpha = Math.sin(Math.min(1, (0.4 - state.blackoutPulse) / 0.4) * Math.PI) * 0.7;
+    ctx.fillStyle = 'rgba(0,0,0,' + Math.max(0, alpha) + ')';
+    ctx.fillRect(0, 0, BASE_W, BASE_H);
+  }
+
   // Hyperspace warp-jump between waves: stars streak outward from center as
   // the new planet loads in, turning a plain cut into a real transition.
   function drawWarpJump(remaining) {
@@ -1684,7 +1984,21 @@
       ctx.restore();
     }
 
-    drawFighter(p.x, p.y, p.sizeMul, p.weaponTimer > 0);
+    if (p.overdriveTimer > 0) {
+      const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 90);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = 'rgba(255, 178, 51, ' + pulse + ')';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ffb833';
+      ctx.shadowBlur = 22;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 4, 24 * p.sizeMul, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawFighter(p.x, p.y, p.sizeMul, p.weaponTimer > 0 || p.overdriveTimer > 0);
 
     if (p.droneTimer > 0) {
       ctx.save();
