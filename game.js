@@ -46,7 +46,9 @@
     levelClearGrade: document.getElementById('levelclear-grade'),
     levelClearTally: document.getElementById('levelclear-tally'),
     levelClearNext: document.getElementById('levelclear-next'),
+    levelClearLore: document.getElementById('levelclear-lore'),
     gameoverWave: document.getElementById('gameover-wave'),
+    gameoverCause: document.getElementById('gameover-cause'),
     gameoverScore: document.getElementById('gameover-score'),
     btnStart: document.getElementById('btn-start'),
     btnLeaderboard: document.getElementById('btn-leaderboard'),
@@ -61,7 +63,85 @@
     submitStatus: document.getElementById('submit-status'),
     btnShareCard: document.getElementById('btn-share-card'),
     resultCanvas: document.getElementById('result-card-canvas'),
+    introCrawl: document.getElementById('intro-crawl'),
+    coreButtons: document.getElementById('core-buttons'),
+    coreDesc: document.getElementById('core-desc'),
   };
+
+  // One-time opening hook — shown before the player has ever dismissed it,
+  // never again after. Lives outside the screen/state machine entirely so it
+  // can't interfere with normal play state.
+  if (!localStorage.getItem('gza_seenIntro')) {
+    el.introCrawl.classList.remove('hidden');
+    const dismissIntro = () => {
+      el.introCrawl.classList.add('hidden');
+      localStorage.setItem('gza_seenIntro', '1');
+    };
+    el.introCrawl.addEventListener('click', dismissIntro, { once: true });
+    el.introCrawl.addEventListener('touchstart', dismissIntro, { once: true, passive: true });
+    window.addEventListener('keydown', dismissIntro, { once: true });
+  }
+
+  // ---------- Ship Cores (persistent meta-progression) ----------
+  // Everything else in a run resets to zero on death — this is the one thing
+  // that carries over, so playing today makes tomorrow's run start stronger.
+  // Unlocks are based on lifetime totals across every run (see endGame()),
+  // stored in localStorage, never on a single run's score. Declared early
+  // (before makePlayer/player below) since makePlayer() reads activeCore()
+  // at module init time, and `const` bindings aren't hoisted like functions.
+  function getLifetimeStats() {
+    return {
+      lifetimeScore: Number(localStorage.getItem('gza_lifetimeScore') || 0),
+      lifetimeBosses: Number(localStorage.getItem('gza_lifetimeBosses') || 0),
+    };
+  }
+  const CORES = [
+    { id: 'alpha', name: 'ALPHA STRIKE', icon: '🚀', desc: 'Balanced. No bonus, no drawback.',
+      unlock: () => true, mods: {} },
+    { id: 'aegis', name: 'AEGIS', icon: '🛡️', desc: '+1 starting life. 8% slower.',
+      unlock: (s) => s.lifetimeScore >= 2000, unlockHint: 'Reach 2,000 lifetime score to unlock',
+      mods: { maxLifeBonus: 1, speedMul: 0.92 } },
+    { id: 'razor', name: 'RAZOR', icon: '⚔️', desc: '12% faster fire. Bigger hitbox.',
+      unlock: (s) => s.lifetimeBosses >= 3, unlockHint: 'Defeat 3 bosses total to unlock',
+      mods: { fireCooldownMul: 0.88, hitboxMul: 1.08 } },
+    { id: 'phantom', name: 'PHANTOM', icon: '👻', desc: 'Overdrive charges 30% faster. Shields fade quicker.',
+      unlock: (s) => s.lifetimeScore >= 8000, unlockHint: 'Reach 8,000 lifetime score to unlock',
+      mods: { overdriveChargeMul: 1.3, shieldDurationMul: 0.75 } },
+  ];
+
+  function activeCore() {
+    const lifetime = getLifetimeStats();
+    const selectedId = localStorage.getItem('gza_selectedCore') || 'alpha';
+    return CORES.find(c => c.id === selectedId && c.unlock(lifetime)) || CORES[0];
+  }
+
+  function renderCoreSelect() {
+    const lifetime = getLifetimeStats();
+    const selectedId = localStorage.getItem('gza_selectedCore') || 'alpha';
+    el.coreButtons.innerHTML = CORES.map(c => {
+      const unlocked = c.unlock(lifetime);
+      const selected = unlocked && c.id === selectedId;
+      return `<button class="core-btn${selected ? ' selected' : ''}${unlocked ? '' : ' locked'}" data-id="${c.id}">
+        <div class="core-icon">${unlocked ? c.icon : '🔒'}</div>
+        <div class="core-name">${c.name}</div>
+      </button>`;
+    }).join('');
+    const active = activeCore();
+    el.coreDesc.textContent = active.desc;
+  }
+
+  el.coreButtons.addEventListener('click', (e) => {
+    const btn = e.target.closest('.core-btn');
+    if (!btn) return;
+    const core = CORES.find(c => c.id === btn.dataset.id);
+    if (!core.unlock(getLifetimeStats())) {
+      el.coreDesc.textContent = '🔒 ' + core.unlockHint;
+      return;
+    }
+    localStorage.setItem('gza_selectedCore', core.id);
+    renderCoreSelect();
+  });
+  renderCoreSelect();
 
   // ============================================================
   // AUDIO — fully procedural (Web Audio API), no asset files
@@ -223,11 +303,16 @@
   // Each planet now also carries a "twist" — a real gameplay rule change, not
   // just a palette swap, so the run feels mechanically different world to world.
   const PLANETS = [
-    { name: 'MARS OUTPOST',        top: '#3a0f0f', bottom: '#0a0202', accent: '#ff5533', ring: false, twist: 'none' },
-    { name: 'EUROPA ICE FIELDS',   top: '#04263a', bottom: '#010509', accent: '#33ccff', ring: false, twist: 'iceDrift' },
-    { name: 'TITAN METHANE SEAS',  top: '#3a2a04', bottom: '#0a0700', accent: '#ffb833', ring: true,  twist: 'meteors' },
-    { name: 'NEBULA RIFT',         top: '#2a0440', bottom: '#08010d', accent: '#cc55ff', ring: true,  twist: 'turbulence' },
-    { name: 'THE VOID',            top: '#210000', bottom: '#000000', accent: '#ff3355', ring: false, twist: 'blackout' },
+    { name: 'MARS OUTPOST',        top: '#3a0f0f', bottom: '#0a0202', accent: '#ff5533', ring: false, twist: 'none',
+      lore: 'Ground zero. The dirt itself started moving first.' },
+    { name: 'EUROPA ICE FIELDS',   top: '#04263a', bottom: '#010509', accent: '#33ccff', ring: false, twist: 'iceDrift',
+      lore: 'The ice is infected too — it won\'t hold still under your boots.' },
+    { name: 'TITAN METHANE SEAS',  top: '#3a2a04', bottom: '#0a0700', accent: '#ffb833', ring: true,  twist: 'meteors',
+      lore: 'The plague rode in on falling rock. More is still coming down.' },
+    { name: 'NEBULA RIFT',         top: '#2a0440', bottom: '#08010d', accent: '#cc55ff', ring: true,  twist: 'turbulence',
+      lore: 'Space itself bends here — something is thinking, and it doesn\'t want you close.' },
+    { name: 'THE VOID',            top: '#210000', bottom: '#000000', accent: '#ff3355', ring: false, twist: 'blackout',
+      lore: 'The last world. The lights already lost this one once.' },
   ];
   const TWIST_LABELS = {
     iceDrift: 'ICE DRIFT', meteors: 'METEOR SHOWER', turbulence: 'TURBULENCE', blackout: 'BLACKOUT',
@@ -242,13 +327,33 @@
   };
 
   // ---------- Boss kinds (cycle every boss wave, each with a distinct look + attack pattern) ----------
+  // Story throughline: the Overmind is orchestrating the infection from world
+  // to world, and the first 5 boss kinds are its lieutenants — each `line` is
+  // shown under the boss's name during the intro slam (see drawBossIntro),
+  // each `fallLine` is a transmission shown on the level-clear screen right
+  // after that lieutenant falls (see triggerLevelClear). The 6th kind IS the
+  // Overmind's own true form, so its fall is the loop's climax, not just
+  // another win — kept generic ("the source") since either of its two flavor
+  // names can be rolled at random.
   const BOSS_KINDS = [
-    { emoji: '👹', glow: '#ff2244', hpMul: 1,    speedMul: 1,   pattern: 'spread',   names: ['SKULLORD PRIME', 'THE ROTTEN KING'] },
-    { emoji: '👻', glow: '#33ccff', hpMul: 0.85, speedMul: 1.3, pattern: 'sweep',    names: ['VOID WRAITH', 'PHANTOM ECHO'] },
-    { emoji: '🗿', glow: '#ffb833', hpMul: 1.6,  speedMul: 0.6, pattern: 'slam',     names: ['STONE COLOSSUS', 'IRON GOLEM'] },
-    { emoji: '👺', glow: '#cc55ff', hpMul: 0.75, speedMul: 1.8, pattern: 'rapid',    names: ['NIGHT STALKER', 'CRIMSON REAPER'] },
-    { emoji: '🎃', glow: '#ff8833', hpMul: 1.2,  speedMul: 1.1, pattern: 'orbit',    names: ['PUMPKIN KING', 'HARVEST HORROR'] },
-    { emoji: '👽', glow: '#33ff99', hpMul: 0.9,  speedMul: 1,   pattern: 'teleport', names: ['THE OVERMIND', 'VOID WATCHER'] },
+    { emoji: '👹', glow: '#ff2244', hpMul: 1,    speedMul: 1,   pattern: 'spread',   names: ['SKULLORD PRIME', 'THE ROTTEN KING'],
+      line: 'First lieutenant. First to fall.',
+      fallLine: 'LIEUTENANT DOWN. THE SIGNAL WEAKENS — BARELY.' },
+    { emoji: '👻', glow: '#33ccff', hpMul: 0.85, speedMul: 1.3, pattern: 'sweep',    names: ['VOID WRAITH', 'PHANTOM ECHO'],
+      line: 'It isn\'t alive. That\'s what makes it fast.',
+      fallLine: 'THE ECHO GOES QUIET. SOMETHING ELSE IS LISTENING NOW.' },
+    { emoji: '🗿', glow: '#ffb833', hpMul: 1.6,  speedMul: 0.6, pattern: 'slam',     names: ['STONE COLOSSUS', 'IRON GOLEM'],
+      line: 'Once a terraforming machine. Now just angry.',
+      fallLine: 'THE COLOSSUS FALLS. THE OVERMIND FELT THAT ONE.' },
+    { emoji: '👺', glow: '#cc55ff', hpMul: 0.75, speedMul: 1.8, pattern: 'rapid',    names: ['NIGHT STALKER', 'CRIMSON REAPER'],
+      line: 'Doesn\'t plan. Doesn\'t need to.',
+      fallLine: 'THE REAPER MISSES ITS MARK — FOR ONCE. THREE LIEUTENANTS LEFT.' },
+    { emoji: '🎃', glow: '#ff8833', hpMul: 1.2,  speedMul: 1.1, pattern: 'orbit',    names: ['PUMPKIN KING', 'HARVEST HORROR'],
+      line: 'It grows a new ring of thorns every time it\'s hurt.',
+      fallLine: 'THE HARVEST ENDS EARLY THIS YEAR. ONE LIEUTENANT REMAINS.' },
+    { emoji: '👽', glow: '#33ff99', hpMul: 0.9,  speedMul: 1,   pattern: 'teleport', names: ['THE OVERMIND', 'VOID WATCHER'],
+      line: 'Not a lieutenant. The source itself, wearing a mask.',
+      fallLine: 'THE SOURCE IS WOUNDED. THE CYCLE BREAKS — FOR NOW. IT WILL COME BACK LOUDER.' },
   ];
 
   // ---------- Input ----------
@@ -428,6 +533,8 @@
     blackoutTimer: 4,
     blackoutPulse: 0,
     meteorTimer: 2,
+    lastBossFallLine: '',
+    core: { mods: {} },
   };
   const KILLCAM_DURATION = 1.0;
   const BOSS_INTRO_DURATION = 1.7;
@@ -457,9 +564,11 @@
   el.highscore.textContent = 'BEST ' + state.highScore;
 
   function makePlayer(x) {
+    const core = activeCore();
+    const hitboxMul = core.mods.hitboxMul || 1;
     return {
-      x, y: BASE_H - 90, w: 34, h: 34,
-      speed: 230, cooldown: 0, vx: 0,
+      x, y: BASE_H - 90, w: 34 * hitboxMul, h: 34 * hitboxMul, baseSize: 34 * hitboxMul,
+      speed: 230 * (core.mods.speedMul || 1), cooldown: 0, vx: 0,
       weaponTimer: 0, shieldTimer: 0, hitFlash: 0, invulnTimer: 0,
       speedTimer: 0, sizeTimer: 0, sizeMul: 1,
       droneTimer: 0, droneCooldown: 0,
@@ -655,7 +764,6 @@
   function startGame() {
     AudioSys.unlock();
     state.score = 0;
-    state.lives = 3;
     state.wave = 1;
     state.planetIdx = 0;
     state.combo = 0;
@@ -666,7 +774,9 @@
     state.bossesDefeated = 0;
     state.overdriveCharge = 0;
     state.overdriveFlash = 0;
-    state.maxLives = 5;
+    state.core = activeCore();
+    state.maxLives = 5 + (state.core.mods.maxLifeBonus || 0);
+    state.lives = 3 + (state.core.mods.maxLifeBonus || 0);
     meteors = [];
     player = makePlayer(BASE_W / 2);
     el.score.textContent = 'SCORE 0';
@@ -829,7 +939,7 @@
     addScore(pts);
     spawnFloater(x, y, '+' + pts, state.combo > 1 ? '#ffd23f' : '#ffffff', state.combo > 3);
     if (player.overdriveTimer <= 0 && state.overdriveCharge < 100) {
-      state.overdriveCharge = Math.min(100, state.overdriveCharge + 8);
+      state.overdriveCharge = Math.min(100, state.overdriveCharge + 8 * (state.core.mods.overdriveChargeMul || 1));
       refreshOverdriveHUD();
     }
   }
@@ -887,11 +997,28 @@
     AudioSys.explosion(true);
   }
 
-  function endGame() {
+  // Cause-of-death flavor lines — makes the loss screen read like a status
+  // report instead of a flat stat dump. 'overwhelmed' = the formation reached
+  // the bottom row; 'destroyed' = any fatal hit (bullet/enemy/boss/meteor).
+  const DEATH_LINES = {
+    overwhelmed: ['THE LINE DIDN\'T HOLD. THEY REACHED THE GROUND.', 'OVERRUN. THE SWARM DIDN\'T STOP COMING.'],
+    destroyed: ['HULL BREACHED. SHIELDS DIDN\'T HOLD.', 'SIGNAL LOST. LAST TELEMETRY: TAKING FIRE.', 'SYSTEMS DARK. THE OVERMIND WINS THIS ROUND.'],
+  };
+
+  function endGame(cause) {
+    const lines = DEATH_LINES[cause] || DEATH_LINES.destroyed;
     el.gameoverScore.textContent = 'SCORE ' + state.score + '   ·   BEST ' + state.highScore;
     el.gameoverWave.textContent = 'MADE IT TO WAVE ' + state.wave;
+    el.gameoverCause.textContent = lines[Math.floor(Math.random() * lines.length)];
     el.btnSubmitScore.disabled = false;
     el.submitStatus.textContent = '';
+    // Ship Core unlocks are the one thing that survives a run — add this
+    // run's contribution to the lifetime totals stored in localStorage.
+    const lifetimeScore = Number(localStorage.getItem('gza_lifetimeScore') || 0) + state.score;
+    const lifetimeBosses = Number(localStorage.getItem('gza_lifetimeBosses') || 0) + state.bossesDefeated;
+    localStorage.setItem('gza_lifetimeScore', String(lifetimeScore));
+    localStorage.setItem('gza_lifetimeBosses', String(lifetimeBosses));
+    renderCoreSelect();
     setScreen('gameover');
     AudioSys.gameOver();
   }
@@ -1021,7 +1148,7 @@
       dt *= 0.2;
       if (state.deathCam <= 0) {
         state.deathCam = 0;
-        if (state.screen === 'playing') endGame();
+        if (state.screen === 'playing') endGame('destroyed');
       }
     }
 
@@ -1120,8 +1247,8 @@
       p.sizeTimer -= dt;
       if (p.sizeTimer <= 0) p.sizeMul = 1;
     }
-    p.w = 34 * p.sizeMul;
-    p.h = 34 * p.sizeMul;
+    p.w = p.baseSize * p.sizeMul;
+    p.h = p.baseSize * p.sizeMul;
 
     if (p.overdriveTimer > 0) {
       p.overdriveTimer -= dt;
@@ -1152,7 +1279,8 @@
     if (p.shieldTimer > 0) p.shieldTimer -= dt;
     if (p.weaponTimer > 0) p.weaponTimer -= dt;
     if (p.invulnTimer > 0) p.invulnTimer -= dt;
-    el.shieldBar.style.width = Math.max(0, (p.shieldTimer / 6) * 100) + '%';
+    const shieldMax = 6 * (state.core.mods.shieldDurationMul || 1);
+    el.shieldBar.style.width = Math.max(0, (p.shieldTimer / shieldMax) * 100) + '%';
     refreshLivesHUD();
 
     if (p.cooldown > 0) p.cooldown -= dt;
@@ -1161,7 +1289,7 @@
       if (state.overdriveCharge >= 100 && p.overdriveTimer <= 0) triggerOverdrive(p);
       fireBullets(p);
       const overdriveFireMul = p.overdriveTimer > 0 ? 0.6 : 1;
-      p.cooldown = (p.weaponTimer > 0 ? 0.11 : 0.26) * (state.mods.rapidCells ? 0.8 : 1) * overdriveFireMul;
+      p.cooldown = (p.weaponTimer > 0 ? 0.11 : 0.26) * (state.mods.rapidCells ? 0.8 : 1) * overdriveFireMul * (state.core.mods.fireCooldownMul || 1);
     }
   }
 
@@ -1244,7 +1372,7 @@
       en.y = en.baseY + Math.sin(t * 2.4 + en.phase) * 4;
 
       if (en.baseY > player.y - 40) {
-        endGame();
+        endGame('overwhelmed');
         return;
       }
     }
@@ -1465,6 +1593,7 @@
     shake(14, 0.5);
     triggerFlash('#ffffff', 0.5);
     state.bossesDefeated++;
+    state.lastBossFallLine = boss.kind.fallLine;
     boss = null;
     el.bossWrap.classList.add('hidden');
   }
@@ -1671,7 +1800,7 @@
   }
 
   function applyPowerup(type, p) {
-    if (type === 'shield') p.shieldTimer = 6;
+    if (type === 'shield') p.shieldTimer = 6 * (state.core.mods.shieldDurationMul || 1);
     else if (type === 'weapon') p.weaponTimer = 8;
     else if (type === 'health') { state.lives = Math.min(state.maxLives, state.lives + 1); refreshLivesHUD(); }
     else if (type === 'bomb') triggerBomb();
@@ -1722,8 +1851,8 @@
   }
 
   function triggerLevelClear() {
-    const next = PLANETS[(state.planetIdx + 1) % PLANETS.length].name;
-    el.levelClearNext.textContent = 'NEXT: ' + next;
+    const nextPlanet = PLANETS[(state.planetIdx + 1) % PLANETS.length];
+    el.levelClearNext.textContent = 'NEXT: ' + nextPlanet.name;
     el.levelClearTitle.textContent = isBossWave(state.wave) ? 'BOSS DEFEATED' : 'WAVE CLEARED';
     const grade = computeGrade();
     el.levelClearGrade.textContent = grade.text;
@@ -1732,6 +1861,15 @@
     state.victoryTallyTo = state.score;
     state.victoryTallyT = 0;
     el.levelClearTally.textContent = 'SCORE ' + state.victoryTallyFrom;
+    // Story beat: a lieutenant-down transmission after a boss kill, or a
+    // teaser of the next world's corruption otherwise — reuses this existing
+    // screen rather than adding a new one (see BOSS_KINDS/PLANETS comments).
+    if (isBossWave(state.wave) && state.lastBossFallLine) {
+      const callSign = (localStorage.getItem('gza_playername') || 'PILOT').toUpperCase();
+      el.levelClearLore.textContent = 'PILOT ' + callSign + ': ' + state.lastBossFallLine;
+    } else {
+      el.levelClearLore.textContent = nextPlanet.lore;
+    }
     setScreen('levelclear');
     el.levelClearTitle.classList.remove('slam-in');
     void el.levelClearTitle.offsetWidth; // force reflow so the animation replays every wave
@@ -1998,7 +2136,7 @@
       ctx.restore();
     }
 
-    drawFighter(p.x, p.y, p.sizeMul, p.weaponTimer > 0 || p.overdriveTimer > 0);
+    drawFighter(p.x, p.y, p.sizeMul * (p.baseSize / 34), p.weaponTimer > 0 || p.overdriveTimer > 0);
 
     if (p.droneTimer > 0) {
       ctx.save();
@@ -2150,6 +2288,10 @@
     ctx.font = '900 30px "Segoe UI", sans-serif';
     ctx.fillStyle = b.kind.glow;
     ctx.fillText(b.name, 0, 6);
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.font = '600 13px "Segoe UI", sans-serif';
+    ctx.fillText(b.kind.line, 0, 36);
     ctx.restore();
   }
 
