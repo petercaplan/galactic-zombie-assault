@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Galactic Zombie Assault</title>
-<link rel="stylesheet" href="style.css?v=20260920c" />
+<link rel="stylesheet" href="style.css?v=20260921a" />
 </head>
 <body>
 
@@ -18,6 +18,7 @@
     <div id="hud-left">
       <div id="lives"></div>
       <div id="shield-wrap"><div id="shield-bar"></div></div>
+      <div id="overdrive-wrap"><div id="overdrive-bar"></div></div>
       <div id="combo-display"></div>
     </div>
     <div id="hud-right">
@@ -85,8 +86,10 @@
       <button class="btn btn-secondary" id="btn-submit-score">SUBMIT SCORE</button>
     </div>
     <div id="submit-status"></div>
+    <button class="btn btn-ghost" id="btn-share-card">📸 SAVE RESULT CARD</button>
     <button class="btn" id="btn-restart">TRY AGAIN</button>
   </div>
+  <canvas id="result-card-canvas" width="640" height="960" class="hidden-canvas"></canvas>
 
   <!-- Touch controls: a dedicated drag pad bottom-left (mirrors FIRE bottom-right)
        so your thumb never has to rest over the play field to steer. -->
@@ -98,6 +101,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="game.js?v=20260920c"></script>
+<script src="game.js?v=20260921a"></script>
 </body>
 </html>
