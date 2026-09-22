@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Galactic Zombie Assault</title>
-<link rel="stylesheet" href="style.css?v=20260921b" />
+<link rel="stylesheet" href="style.css?v=20260922a" />
 </head>
 <body>
 
@@ -36,6 +36,7 @@
     <div id="hud-right">
       <div id="score">SCORE 0</div>
       <div id="highscore">BEST 0</div>
+      <div id="mp-badge" class="hidden"></div>
     </div>
     <div id="planet-name"></div>
   </div>
@@ -58,11 +59,49 @@
       <div id="core-desc"></div>
     </div>
     <button class="btn" id="btn-start">START</button>
+    <button class="btn btn-ghost" id="btn-online">🌐 PLAY ONLINE</button>
     <button class="btn btn-ghost" id="btn-leaderboard">🏆 LEADERBOARD</button>
     <div class="howto">
       <div class="howto-row"><span class="key">◀ ▶</span> move &nbsp;·&nbsp; <span class="key">SPACE</span> shoot &nbsp;·&nbsp; <span class="key">P</span> pause</div>
       <div class="howto-row touch-only">or drag the pad bottom-left to move &nbsp;·&nbsp; tap FIRE bottom-right</div>
     </div>
+  </div>
+
+  <!-- Online menu: choose to host a room or join one with a code -->
+  <div class="screen hidden" id="screen-online-menu">
+    <h2 class="title small">🌐 PLAY ONLINE</h2>
+    <p class="subtitle">Host a game and share the code, or join a friend's game. Up to 4 pilots, one shared run.</p>
+    <button class="btn" id="btn-host-game">HOST A GAME</button>
+    <button class="btn btn-secondary" id="btn-join-game">JOIN A GAME</button>
+    <button class="btn btn-ghost" id="btn-online-back">BACK</button>
+  </div>
+
+  <!-- Join screen: enter a room code -->
+  <div class="screen hidden" id="screen-join">
+    <h2 class="title small">JOIN A GAME</h2>
+    <input type="text" id="input-join-code" maxlength="5" placeholder="ROOM CODE" autocomplete="off" />
+    <button class="btn" id="btn-join-confirm">JOIN</button>
+    <div id="join-status"></div>
+    <button class="btn btn-ghost" id="btn-join-back">BACK</button>
+  </div>
+
+  <!-- Host lobby: shows the room code to share + connected pilots -->
+  <div class="screen hidden" id="screen-host-lobby">
+    <h2 class="title small">YOUR ROOM CODE</h2>
+    <div id="host-room-code"></div>
+    <p class="subtitle">Share this code — friends join from the START screen.</p>
+    <div id="lobby-players"></div>
+    <button class="btn" id="btn-host-start">START GAME</button>
+    <button class="btn btn-ghost" id="btn-host-cancel">CANCEL ROOM</button>
+  </div>
+
+  <!-- Guest lobby: waiting for the host to start -->
+  <div class="screen hidden" id="screen-guest-lobby">
+    <h2 class="title small">IN THE LOBBY</h2>
+    <div id="guest-room-code"></div>
+    <p class="subtitle" id="guest-lobby-status">Waiting for the host to start…</p>
+    <div id="lobby-players-guest"></div>
+    <button class="btn btn-ghost" id="btn-guest-leave">LEAVE</button>
   </div>
 
   <!-- Leaderboard screen -->
@@ -120,6 +159,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="game.js?v=20260921b"></script>
+<script src="game.js?v=20260922a"></script>
 </body>
 </html>
