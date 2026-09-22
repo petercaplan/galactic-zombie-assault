@@ -394,6 +394,81 @@ canvas#game {
   line-height: 1.5;
 }
 
+/* ---------- Online multiplayer ---------- */
+#mp-badge {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #ffd23f;
+  text-shadow: 0 0 8px #ffb833;
+  margin-top: 2px;
+}
+#mp-badge.hidden { display: none; }
+
+#input-join-code {
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  text-align: center;
+  color: #fff;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  width: 180px;
+  margin-top: 8px;
+}
+#input-join-code:focus { outline: none; border-color: #7dffb0; }
+#join-status {
+  min-height: 16px;
+  font-size: 12px;
+  color: #ff8899;
+  margin-top: 8px;
+}
+
+#host-room-code, #guest-room-code {
+  font-size: clamp(36px, 12vw, 56px);
+  font-weight: 900;
+  letter-spacing: 10px;
+  color: #ffd23f;
+  text-shadow: 0 0 16px #ffb833, 0 0 34px rgba(255,178,51,0.6);
+  margin: 6px 0 10px 0;
+}
+
+#lobby-players, #lobby-players-guest {
+  width: min(300px, 84vw);
+  margin: 8px 0 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lobby-player-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.15);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.lobby-player-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px currentColor;
+}
+.lobby-player-host-tag {
+  margin-left: auto;
+  font-size: 10px;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 1px;
+}
+
 .btn {
   font-family: inherit;
   font-size: clamp(16px, 4vw, 18px);
