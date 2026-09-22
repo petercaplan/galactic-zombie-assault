@@ -66,6 +66,27 @@
     introCrawl: document.getElementById('intro-crawl'),
     coreButtons: document.getElementById('core-buttons'),
     coreDesc: document.getElementById('core-desc'),
+    mpBadge: document.getElementById('mp-badge'),
+    btnOnline: document.getElementById('btn-online'),
+    screenOnlineMenu: document.getElementById('screen-online-menu'),
+    btnHostGame: document.getElementById('btn-host-game'),
+    btnJoinGame: document.getElementById('btn-join-game'),
+    btnOnlineBack: document.getElementById('btn-online-back'),
+    screenJoin: document.getElementById('screen-join'),
+    inputJoinCode: document.getElementById('input-join-code'),
+    btnJoinConfirm: document.getElementById('btn-join-confirm'),
+    joinStatus: document.getElementById('join-status'),
+    btnJoinBack: document.getElementById('btn-join-back'),
+    screenHostLobby: document.getElementById('screen-host-lobby'),
+    hostRoomCode: document.getElementById('host-room-code'),
+    lobbyPlayers: document.getElementById('lobby-players'),
+    btnHostStart: document.getElementById('btn-host-start'),
+    btnHostCancel: document.getElementById('btn-host-cancel'),
+    screenGuestLobby: document.getElementById('screen-guest-lobby'),
+    guestRoomCode: document.getElementById('guest-room-code'),
+    guestLobbyStatus: document.getElementById('guest-lobby-status'),
+    lobbyPlayersGuest: document.getElementById('lobby-players-guest'),
+    btnGuestLeave: document.getElementById('btn-guest-leave'),
   };
 
   // One-time opening hook — shown before the player has ever dismissed it,
@@ -260,25 +281,28 @@
   // ============================================================
   // LEADERBOARD — Firebase Firestore (global high scores)
   // ============================================================
-  const LeaderboardSys = (() => {
-    let db = null;
-    try {
-      const firebaseConfig = {
-        apiKey: 'AIzaSyDaWjFfy7vhdy4_Poo2xAGMrI42Rca5MHY',
-        authDomain: 'galactic-zombie-assault.firebaseapp.com',
-        projectId: 'galactic-zombie-assault',
-        storageBucket: 'galactic-zombie-assault.firebasestorage.app',
-        messagingSenderId: '363279081480',
-        appId: '1:363279081480:web:cd52ba8dccbe7a1cea31bd',
-      };
-      if (window.firebase) {
-        firebase.initializeApp(firebaseConfig);
-        db = firebase.firestore();
-      }
-    } catch (e) {
-      db = null;
+  // Shared Firestore handle — both the leaderboard and the multiplayer sync
+  // below reuse this single initialized app/db rather than each calling
+  // firebase.initializeApp() (which throws if called a second time).
+  let db = null;
+  try {
+    const firebaseConfig = {
+      apiKey: 'AIzaSyDaWjFfy7vhdy4_Poo2xAGMrI42Rca5MHY',
+      authDomain: 'galactic-zombie-assault.firebaseapp.com',
+      projectId: 'galactic-zombie-assault',
+      storageBucket: 'galactic-zombie-assault.firebasestorage.app',
+      messagingSenderId: '363279081480',
+      appId: '1:363279081480:web:cd52ba8dccbe7a1cea31bd',
+    };
+    if (window.firebase) {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
     }
+  } catch (e) {
+    db = null;
+  }
 
+  const LeaderboardSys = (() => {
     async function submit(name, score, wave, mode) {
       if (!db) throw new Error('offline');
       await db.collection('scores').add({
@@ -298,6 +322,98 @@
 
     return { submit, fetchTop, isAvailable: () => !!db };
   })();
+
+  // ============================================================
+  // MULTIPLAYER — host-authoritative real-time co-op over the same
+  // Firestore project as the leaderboard. One player's browser (the host)
+  // runs the actual simulation exactly like solo play and broadcasts a
+  // trimmed state snapshot ~8x/sec; every other browser (a guest) never
+  // simulates anything itself — it just renders the latest snapshot and
+  // sends its own input back. This keeps the guest's code surface tiny and
+  // avoids any simulation desync, at the cost of guest input having some
+  // network latency (a deliberate simplicity-over-precision tradeoff for a
+  // casual family game, not a competitive one).
+  // ============================================================
+  const MultiplayerSys = (() => {
+    function isAvailable() { return !!db; }
+
+    function makeCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I ambiguity
+      let s = '';
+      for (let i = 0; i < 5; i++) s += chars[Math.floor(Math.random() * chars.length)];
+      return s;
+    }
+
+    async function hostCreate(hostName) {
+      if (!db) throw new Error('offline');
+      const code = makeCode();
+      const hostId = 'p_' + Math.random().toString(36).slice(2, 9);
+      await db.collection('mp_rooms').doc(code).set({
+        hostId,
+        phase: 'lobby',
+        players: { [hostId]: { name: hostName.slice(0, 12), isHost: true, colorIdx: 0 } },
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      return { code, playerId: hostId };
+    }
+
+    async function guestJoin(code, guestName) {
+      if (!db) throw new Error('offline');
+      const ref = db.collection('mp_rooms').doc(code);
+      const snap = await ref.get();
+      if (!snap.exists) throw new Error('not-found');
+      const data = snap.data();
+      if (data.phase !== 'lobby') throw new Error('already-started');
+      const count = Object.keys(data.players || {}).length;
+      if (count >= 4) throw new Error('full');
+      const guestId = 'p_' + Math.random().toString(36).slice(2, 9);
+      await ref.update({
+        ['players.' + guestId]: { name: guestName.slice(0, 12), isHost: false, colorIdx: count },
+      });
+      return { playerId: guestId, colorIdx: count };
+    }
+
+    function listenRoom(code, cb) {
+      return db.collection('mp_rooms').doc(code).onSnapshot(snap => {
+        cb(snap.exists ? snap.data() : null);
+      }, () => cb(null));
+    }
+
+    function listenInputs(code, cb) {
+      return db.collection('mp_rooms').doc(code).collection('inputs').onSnapshot(snap => {
+        const map = {};
+        snap.forEach(d => { map[d.id] = d.data(); });
+        cb(map);
+      });
+    }
+
+    function sendInput(code, playerId, input) {
+      if (!db || !code) return;
+      db.collection('mp_rooms').doc(code).collection('inputs').doc(playerId).set(input).catch(() => {});
+    }
+
+    function startRoom(code) {
+      return db.collection('mp_rooms').doc(code).update({ phase: 'playing' });
+    }
+
+    function writeSnapshot(code, snapshot) {
+      if (!db || !code) return;
+      db.collection('mp_rooms').doc(code).update({ snapshot, updatedAt: Date.now() }).catch(() => {});
+    }
+
+    function leaveRoom(code, playerId, isHost) {
+      if (!db || !code) return;
+      if (isHost) {
+        db.collection('mp_rooms').doc(code).update({ phase: 'ended' }).catch(() => {});
+      } else {
+        db.collection('mp_rooms').doc(code).update({ ['players.' + playerId]: firebase.firestore.FieldValue.delete() }).catch(() => {});
+      }
+    }
+
+    return { isAvailable, hostCreate, guestJoin, listenRoom, listenInputs, sendInput, startRoom, writeSnapshot, leaveRoom };
+  })();
+
+  const SHIP_COLORS = ['#7dffb0', '#33e0ff', '#ff66ff', '#ffb833'];
 
   // ---------- Planets (visual themes, cycle + escalate) ----------
   // Each planet now also carries a "twist" — a real gameplay rule change, not
@@ -442,7 +558,17 @@
   el.btnStart.addEventListener('click', () => startGame());
   el.btnResume.addEventListener('click', togglePause);
   el.btnContinue.addEventListener('click', handleContinueClick);
-  el.btnRestart.addEventListener('click', () => startGame());
+  el.btnRestart.addEventListener('click', () => {
+    // A shared multiplayer run ends completely at game over in v1 — simpler
+    // and safer than trying to reconcile a seamless shared "play again."
+    if (state.mp.active) {
+      MultiplayerSys.leaveRoom(state.mp.roomCode, state.mp.playerId, state.mp.role === 'host');
+      mpTeardown();
+      setScreen('start');
+      return;
+    }
+    startGame();
+  });
 
   el.upgradeCards.addEventListener('click', (e) => {
     const card = e.target.closest('.upgrade-card');
@@ -458,6 +584,84 @@
   });
   el.btnLeaderboardBack.addEventListener('click', () => setScreen('start'));
 
+  // ---------- Online multiplayer UI wiring ----------
+  el.btnOnline.addEventListener('click', () => setScreen('online-menu'));
+  el.btnOnlineBack.addEventListener('click', () => setScreen('start'));
+
+  el.btnHostGame.addEventListener('click', async () => {
+    if (!MultiplayerSys.isAvailable()) { alert("Online play needs an internet connection."); return; }
+    const name = (localStorage.getItem('gza_playername') || 'HOST').toUpperCase();
+    el.btnHostGame.disabled = true;
+    try {
+      const { code, playerId } = await MultiplayerSys.hostCreate(name);
+      state.mp.role = 'host'; state.mp.roomCode = code; state.mp.playerId = playerId;
+      state.mp.playerName = name; state.mp.colorIdx = 0;
+      el.hostRoomCode.textContent = code;
+      if (mpUnsubRoom) mpUnsubRoom();
+      mpUnsubRoom = MultiplayerSys.listenRoom(code, onRoomUpdate);
+      setScreen('host-lobby');
+    } catch (e) {
+      alert("Couldn't create a room — check your connection and try again.");
+    }
+    el.btnHostGame.disabled = false;
+  });
+
+  el.btnHostCancel.addEventListener('click', () => {
+    MultiplayerSys.leaveRoom(state.mp.roomCode, state.mp.playerId, true);
+    mpTeardown();
+    setScreen('start');
+  });
+
+  el.btnHostStart.addEventListener('click', async () => {
+    if (!state.mp.roomCode) return;
+    el.btnHostStart.disabled = true;
+    await MultiplayerSys.startRoom(state.mp.roomCode);
+    if (mpUnsubInputs) mpUnsubInputs();
+    mpUnsubInputs = MultiplayerSys.listenInputs(state.mp.roomCode, (map) => { mpRemoteInputs = map; });
+    startMultiplayerGame(mpLastPlayers);
+    el.btnHostStart.disabled = false;
+  });
+
+  el.btnJoinGame.addEventListener('click', () => {
+    el.joinStatus.textContent = '';
+    el.inputJoinCode.value = '';
+    setScreen('join');
+  });
+  el.btnJoinBack.addEventListener('click', () => setScreen('online-menu'));
+
+  el.btnJoinConfirm.addEventListener('click', async () => {
+    const code = el.inputJoinCode.value.trim().toUpperCase();
+    if (!code) return;
+    if (!MultiplayerSys.isAvailable()) { el.joinStatus.textContent = 'Online play needs an internet connection.'; return; }
+    const name = (localStorage.getItem('gza_playername') || 'PILOT').toUpperCase();
+    el.btnJoinConfirm.disabled = true;
+    el.joinStatus.textContent = 'Joining…';
+    try {
+      const { playerId, colorIdx } = await MultiplayerSys.guestJoin(code, name);
+      state.mp.role = 'guest'; state.mp.roomCode = code; state.mp.playerId = playerId;
+      state.mp.playerName = name; state.mp.colorIdx = colorIdx;
+      el.guestRoomCode.textContent = code;
+      if (mpUnsubRoom) mpUnsubRoom();
+      mpUnsubRoom = MultiplayerSys.listenRoom(code, onRoomUpdate);
+      setScreen('guest-lobby');
+    } catch (e) {
+      el.joinStatus.textContent = e.message === 'not-found' ? "Room not found — check the code."
+        : e.message === 'already-started' ? "That game already started."
+        : e.message === 'full' ? "That room is full (4 pilots max)."
+        : "Couldn't join — check your connection.";
+    }
+    el.btnJoinConfirm.disabled = false;
+  });
+  el.inputJoinCode.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); el.btnJoinConfirm.click(); }
+  });
+
+  el.btnGuestLeave.addEventListener('click', () => {
+    MultiplayerSys.leaveRoom(state.mp.roomCode, state.mp.playerId, false);
+    mpTeardown();
+    setScreen('start');
+  });
+
   el.inputName.value = localStorage.getItem('gza_playername') || '';
   el.inputName.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); el.btnSubmitScore.click(); }
@@ -467,7 +671,7 @@
     localStorage.setItem('gza_playername', name);
     el.btnSubmitScore.disabled = true;
     el.submitStatus.textContent = 'Submitting…';
-    LeaderboardSys.submit(name, state.score, state.wave, '1P')
+    LeaderboardSys.submit(name, state.score, state.wave, state.mp.active ? 'MP' : '1P')
       .then(() => { el.submitStatus.textContent = 'Submitted! Check the leaderboard 🏆'; })
       .catch(() => {
         el.submitStatus.textContent = "Couldn't submit — check your connection.";
@@ -490,6 +694,7 @@
   });
 
   function handleEnter() {
+    if (state.mp.active && state.mp.role === 'guest') return; // guest never drives screen transitions
     if (state.screen === 'start') startGame();
     else if (state.screen === 'levelclear') nextWave();
     else if (state.screen === 'gameover') startGame();
@@ -535,7 +740,16 @@
     meteorTimer: 2,
     lastBossFallLine: '',
     core: { mods: {} },
+    mp: { active: false, role: null, roomCode: null, playerId: null, playerName: '', colorIdx: 0 },
   };
+  let remoteShips = [];      // host-only: ship objects for connected guests, driven by their input
+  let mpGuestShips = [];     // guest-only: ship-like objects rebuilt fresh from each host snapshot
+  let mpRemoteInputs = {};   // host-only: latest {left,right,firing,touchDelta} per remote playerId
+  let mpLastPlayers = {};    // roster from the room doc, used to render the lobby list
+  let mpUnsubRoom = null;
+  let mpUnsubInputs = null;
+  let mpBroadcastAccum = 0;
+  let mpGuestInputAccum = 0;
   const KILLCAM_DURATION = 1.0;
   const BOSS_INTRO_DURATION = 1.7;
   const DEATHCAM_DURATION = 1.2;
@@ -575,6 +789,36 @@
       overdriveTimer: 0,
       exploded: false,
     };
+  }
+
+  function makeRemoteShip(id, name, colorIdx) {
+    return {
+      id, name, colorIdx,
+      x: BASE_W / 2, y: BASE_H - 90, w: 34, h: 34, baseSize: 34,
+      speed: 230, cooldown: 0, vx: 0,
+      weaponTimer: 0, shieldTimer: 0, hitFlash: 0, invulnTimer: 0,
+      speedTimer: 0, sizeTimer: 0, sizeMul: 1,
+      droneTimer: 0, droneCooldown: 0,
+      overdriveTimer: 0,
+      exploded: false,
+    };
+  }
+
+  // All ships under THIS browser's control that gameplay should react to:
+  // solo/guest play has just the local player; a multiplayer host also owns
+  // every connected guest's ship (their input arrives over the network, but
+  // the host is what actually moves them and checks their collisions).
+  function allShips() {
+    return (state.mp.active && state.mp.role === 'host') ? [player, ...remoteShips] : [player];
+  }
+
+  function nearestShipTo(x, y) {
+    let best = player, bestDist = Infinity;
+    for (const sh of allShips()) {
+      const d = Math.hypot(sh.x - x, sh.y - y);
+      if (d < bestDist) { bestDist = d; best = sh; }
+    }
+    return best;
   }
 
   let player = makePlayer(BASE_W / 2);
@@ -762,6 +1006,7 @@
   }
 
   function startGame() {
+    if (state.mp.active && state.mp.role === 'guest') return; // guests never self-start; beginGuestPlay() drives them
     AudioSys.unlock();
     state.score = 0;
     state.wave = 1;
@@ -802,6 +1047,7 @@
   // a fresh set of 3 random options is offered — every wave gets a real
   // choice, but nothing stacks permanently (see MODIFIERS comment above).
   function handleContinueClick() {
+    if (state.mp.active && state.mp.role === 'guest') return; // only the host advances waves
     state.mods = {};
     showUpgradeChoices();
   }
@@ -841,6 +1087,10 @@
     el.screenGameOver.classList.toggle('hidden', name !== 'gameover');
     el.screenLeaderboard.classList.toggle('hidden', name !== 'leaderboard');
     el.screenUpgrade.classList.toggle('hidden', name !== 'upgrade');
+    el.screenOnlineMenu.classList.toggle('hidden', name !== 'online-menu');
+    el.screenJoin.classList.toggle('hidden', name !== 'join');
+    el.screenHostLobby.classList.toggle('hidden', name !== 'host-lobby');
+    el.screenGuestLobby.classList.toggle('hidden', name !== 'guest-lobby');
     if (name === 'gameover' || name === 'start' || name === 'leaderboard') {
       AudioSys.stopMusic();
       el.bossWrap.classList.add('hidden');
@@ -859,7 +1109,7 @@
           <div class="leaderboard-rank">${i + 1}</div>
           <div class="leaderboard-name">${escapeHtml(r.name || '???')}</div>
           <div class="leaderboard-score">${r.score}</div>
-          <div class="leaderboard-mode">${r.mode === '2P' ? '2P' : '1P'}</div>
+          <div class="leaderboard-mode">${r.mode === 'MP' ? 'MP' : '1P'}</div>
         </div>
       `).join('');
     }).catch(() => {
@@ -872,6 +1122,7 @@
   }
 
   function togglePause() {
+    if (state.mp.active) return; // pausing a shared run would desync the guest's view of it
     if (state.screen === 'playing') setScreen('paused');
     else if (state.screen === 'paused') setScreen('playing');
   }
@@ -1126,6 +1377,21 @@
     lastTime = now;
     if (dt > 0.05) dt = 0.05;
 
+    // A multiplayer guest never simulates anything — it only renders the
+    // host's latest broadcast (applied as it arrives, in onRoomUpdate) and
+    // periodically sends its own input. No cinematics/collision/AI here.
+    if (state.mp.active && state.mp.role === 'guest') {
+      updateBackground(dt); // purely decorative locally — never synced, just keeps the starfield moving
+      mpGuestInputAccum += dt;
+      if (mpGuestInputAccum >= 0.08) {
+        mpGuestInputAccum = 0;
+        sendGuestInput();
+      }
+      render();
+      requestAnimationFrame(loop);
+      return;
+    }
+
     if (state.hitStop > 0) {
       state.hitStop -= dt;
       dt = 0;
@@ -1177,12 +1443,25 @@
       el.levelClearTally.textContent = 'SCORE ' + val;
     }
 
+    // Broadcast even across non-'playing' screens (levelclear/upgrade/gameover)
+    // so guests see the same victory/death/upgrade screens the host does.
+    if (state.mp.active && state.mp.role === 'host') {
+      mpBroadcastAccum += dt;
+      if (mpBroadcastAccum >= 0.12) {
+        mpBroadcastAccum = 0;
+        MultiplayerSys.writeSnapshot(state.mp.roomCode, serializeSnapshot());
+      }
+    }
+
     if (state.screen !== 'playing') return;
 
     const intensity = Math.min(1, (state.wave - 1) / 8);
     AudioSys.updateMusic(dt, intensity);
 
     updatePlayer(player, dt);
+    if (state.mp.active && state.mp.role === 'host') {
+      for (const ship of remoteShips) updateRemoteShip(ship, dt, mpRemoteInputs[ship.id] || {});
+    }
     updateBullets(dt);
     updateEnemies(dt);
     updateBoss(dt);
@@ -1327,6 +1606,47 @@
     }
   }
 
+  // Host-only: moves a connected guest's ship from their last-received input
+  // doc, using the same movement/fire math as updatePlayer() but reading a
+  // network input object instead of local keys/touch. Deliberately a
+  // separate function rather than a shared refactor of updatePlayer() itself
+  // — lower regression risk for the already-solid solo/host movement code.
+  function updateRemoteShip(p, dt, input) {
+    const curSpeed = p.speed * (p.speedTimer > 0 ? 1.6 : 1);
+    if (input.left) p.x -= curSpeed * dt;
+    if (input.right) p.x += curSpeed * dt;
+    if (input.touchDelta) p.x += input.touchDelta;
+    p.x = Math.max(p.w / 2 + 4, Math.min(BASE_W - p.w / 2 - 4, p.x));
+
+    if (p.speedTimer > 0) p.speedTimer -= dt;
+    if (p.sizeTimer > 0) { p.sizeTimer -= dt; if (p.sizeTimer <= 0) p.sizeMul = 1; }
+    p.w = p.baseSize * p.sizeMul;
+    p.h = p.baseSize * p.sizeMul;
+    if (p.overdriveTimer > 0) { p.overdriveTimer -= dt; p.w *= 1.15; p.h *= 1.15; }
+
+    if (p.droneTimer > 0) {
+      p.droneTimer -= dt;
+      p.droneCooldown -= dt;
+      if (p.droneCooldown <= 0) {
+        playerBullets.push({ x: p.x + 22, y: p.y - 10, vx: 0, vy: -480, w: 4, h: 10 });
+        p.droneCooldown = 0.35;
+      }
+    }
+
+    if (p.shieldTimer > 0) p.shieldTimer -= dt;
+    if (p.weaponTimer > 0) p.weaponTimer -= dt;
+    if (p.invulnTimer > 0) p.invulnTimer -= dt;
+    if (p.hitFlash > 0) p.hitFlash -= dt;
+
+    if (p.cooldown > 0) p.cooldown -= dt;
+    if (input.firing && p.cooldown <= 0) {
+      if (state.overdriveCharge >= 100 && p.overdriveTimer <= 0) triggerOverdrive(p);
+      fireBullets(p);
+      const overdriveFireMul = p.overdriveTimer > 0 ? 0.6 : 1;
+      p.cooldown = (p.weaponTimer > 0 ? 0.11 : 0.26) * overdriveFireMul;
+    }
+  }
+
   function updateBullets(dt) {
     for (const b of playerBullets) {
       b.x += (b.vx || 0) * dt; b.y += b.vy * dt;
@@ -1393,8 +1713,9 @@
       if (candidates.length) {
         const d = candidates[Math.floor(Math.random() * candidates.length)];
         d.diving = true;
+        const target = nearestShipTo(d.x, d.y);
         const travelTime = 1 + Math.random() * 0.4;
-        d.diveVx = (player.x - d.x) / travelTime;
+        d.diveVx = (target.x - d.x) / travelTime;
         d.diveVy = 30;
       }
     }
@@ -1526,7 +1847,8 @@
       enemyBullets.push({ x: boss.x + 20, y: boss.y + boss.h / 2, vx: Math.sin(-sweepAngle) * speed, vy: Math.cos(-sweepAngle) * speed, w: 6, h: 14 });
     } else if (pattern === 'slam' && boss.fireTimer <= 0) {
       boss.fireTimer = Math.max(0.7, 1.6 - enrage * 0.6);
-      const dx = player.x - boss.x, dy = player.y - boss.y;
+      const target = nearestShipTo(boss.x, boss.y);
+      const dx = target.x - boss.x, dy = target.y - boss.y;
       const dist = Math.hypot(dx, dy) || 1;
       const speed = 220 + state.wave * 6;
       enemyBullets.push({ x: boss.x, y: boss.y + boss.h / 2, vx: (dx / dist) * speed, vy: (dy / dist) * speed, w: 8, h: 16 });
@@ -1545,7 +1867,8 @@
       }
     } else if (pattern === 'teleport' && boss.fireTimer <= 0) {
       boss.fireTimer = Math.max(0.3, 0.7 - enrage * 0.3);
-      const dx = player.x - boss.x, dy = player.y - boss.y;
+      const target = nearestShipTo(boss.x, boss.y);
+      const dx = target.x - boss.x, dy = target.y - boss.y;
       const dist = Math.hypot(dx, dy) || 1;
       const speed = 200 + state.wave * 6;
       enemyBullets.push({ x: boss.x, y: boss.y + boss.h / 2, vx: (dx / dist) * speed, vy: (dy / dist) * speed, w: 6, h: 14 });
@@ -1567,7 +1890,9 @@
       }
     }
 
-    if (rectHit(boss, player)) loseLife(player);
+    for (const sh of allShips()) {
+      if (rectHit(boss, sh)) loseLife(sh);
+    }
   }
 
   // Bullet-time boss finisher: slow-mo + zoom on the kill, reusing the
@@ -1643,10 +1968,11 @@
     for (const p of powerups) {
       p.y += p.speed * dt;
       if (state.mods.magnet) {
-        const dist = Math.hypot(player.x - p.x, player.y - p.y);
+        const target = nearestShipTo(p.x, p.y);
+        const dist = Math.hypot(target.x - p.x, target.y - p.y);
         if (dist < 160 && dist > 1) {
-          p.x += (player.x - p.x) / dist * 220 * dt;
-          p.y += (player.y - p.y) / dist * 220 * dt;
+          p.x += (target.x - p.x) / dist * 220 * dt;
+          p.y += (target.y - p.y) / dist * 220 * dt;
         }
       }
     }
@@ -1737,44 +2063,59 @@
     }
     playerBullets = playerBullets.filter(b => !b.dead);
 
+    const ships = allShips();
+
     for (const b of enemyBullets) {
-      if (rectHit(b, player)) {
-        b.dead = true;
-        spawnParticles(player.x, player.y, '#ff5566', 10, 80);
-        loseLife(player);
+      for (const sh of ships) {
+        if (rectHit(b, sh)) {
+          b.dead = true;
+          spawnParticles(sh.x, sh.y, '#ff5566', 10, 80);
+          loseLife(sh);
+          break;
+        }
       }
     }
     enemyBullets = enemyBullets.filter(b => !b.dead);
 
     for (const en of enemies) {
       if (!en.alive) continue;
-      if (rectHit(en, player)) {
-        en.alive = false;
-        spawnParticles(en.x, en.y, '#ff5566', 14, 90);
-        AudioSys.explosion(false);
-        loseLife(player);
+      for (const sh of ships) {
+        if (rectHit(en, sh)) {
+          en.alive = false;
+          spawnParticles(en.x, en.y, '#ff5566', 14, 90);
+          AudioSys.explosion(false);
+          loseLife(sh);
+          break;
+        }
       }
     }
 
     for (const pu of powerups) {
-      if (rectHit(pu, player)) {
-        pu.dead = true;
-        applyPowerup(pu.type, player);
-        spawnParticles(player.x, player.y - 10, '#ffffff', 18, 110);
-        AudioSys.powerup();
-        triggerFlash('#ffffff', 0.22);
+      for (const sh of ships) {
+        if (rectHit(pu, sh)) {
+          pu.dead = true;
+          applyPowerup(pu.type, sh);
+          spawnParticles(sh.x, sh.y - 10, '#ffffff', 18, 110);
+          AudioSys.powerup();
+          triggerFlash('#ffffff', 0.22);
+          break;
+        }
       }
     }
     powerups = powerups.filter(pu => !pu.dead);
 
     for (const m of meteors) {
       if (m.dead) continue;
-      if (rectHit(m, player)) {
+      let hitShip = null;
+      for (const sh of ships) {
+        if (rectHit(m, sh)) { hitShip = sh; break; }
+      }
+      if (hitShip) {
         m.dead = true;
         spawnParticles(m.x, m.y, '#ff8833', 16, 100);
         spawnShockwave(m.x, m.y, '#ff8833', 30, 0.3);
         AudioSys.explosion(false);
-        loseLife(player);
+        loseLife(hitShip);
         continue;
       }
       for (const b of playerBullets) {
@@ -1803,7 +2144,7 @@
     if (type === 'shield') p.shieldTimer = 6 * (state.core.mods.shieldDurationMul || 1);
     else if (type === 'weapon') p.weaponTimer = 8;
     else if (type === 'health') { state.lives = Math.min(state.maxLives, state.lives + 1); refreshLivesHUD(); }
-    else if (type === 'bomb') triggerBomb();
+    else if (type === 'bomb') triggerBomb(p);
     else if (type === 'speed') p.speedTimer = 8;
     else if (type === 'mega') { p.sizeTimer = 8; p.sizeMul = 1.6; p.weaponTimer = Math.max(p.weaponTimer, 8); }
     else if (type === 'mini') { p.sizeTimer = 8; p.sizeMul = 0.6; }
@@ -1811,12 +2152,13 @@
     else if (type === 'gem') { addScore(100); spawnFloater(p.x, p.y - 20, '+100', '#66ffff', true); }
   }
 
-  function triggerBomb() {
+  function triggerBomb(p) {
+    const origin = p || player;
     AudioSys.bombBlast();
     triggerFlash('#ffffff', 0.7);
     shake(12, 0.4);
     triggerHitStop(0.05);
-    spawnShockwave(player.x, player.y, '#ffffff', 240, 0.55);
+    spawnShockwave(origin.x, origin.y, '#ffffff', 240, 0.55);
     for (const en of enemies) {
       if (en.alive) {
         en.alive = false;
@@ -1878,6 +2220,194 @@
     AudioSys.waveClear();
   }
 
+  // ---------- Multiplayer: host broadcast / guest apply ----------
+
+  // Host-only: a small, cheap-to-write snapshot of everything a guest needs
+  // to render the same moment the host is seeing. Deliberately excludes
+  // decorative-only state (particles, shockwaves, starfield) — those are
+  // pure juice, not core feedback, and syncing them would multiply the
+  // payload for no gameplay benefit. Screens beyond plain 'playing'
+  // (levelclear/upgrade/gameover) carry just the text guests need to read;
+  // only the host can click through them (see the mp.role==='guest' guards
+  // on handleContinueClick/handleEnter/startGame below).
+  function serializeSnapshot() {
+    const ships = {};
+    for (const sh of allShips()) {
+      const id = sh.id || state.mp.playerId;
+      ships[id] = {
+        x: sh.x, y: sh.y, sizeMul: sh.sizeMul,
+        shieldOn: sh.shieldTimer > 0, overdriveOn: sh.overdriveTimer > 0,
+        weaponOn: sh.weaponTimer > 0, droneOn: sh.droneTimer > 0,
+        exploded: !!sh.exploded, colorIdx: sh.id ? sh.colorIdx : 0,
+      };
+    }
+    return {
+      screen: state.screen,
+      wave: state.wave, planetIdx: state.planetIdx, score: state.score,
+      lives: state.lives, maxLives: state.maxLives,
+      planetNameText: el.planetName.textContent,
+      comboText: el.combo.textContent, comboShow: el.combo.classList.contains('show'),
+      killCam: state.killCam, deathCam: state.deathCam, bossCam: state.bossCam, warpCam: state.warpCam,
+      shakeMag: state.shakeMag, shakeTime: state.shakeTime,
+      flashColor: state.flashColor, flashAlpha: state.flashAlpha,
+      blackoutPulse: state.blackoutPulse,
+      boss: boss ? {
+        x: boss.x, y: boss.y, emoji: boss.emoji, name: boss.name,
+        hp: boss.hp, maxHp: boss.maxHp, hitFlash: boss.hitFlash,
+        dying: boss.dying, dyingTimer: boss.dyingTimer, introTimer: boss.introTimer,
+        kind: { glow: boss.kind.glow, line: boss.kind.line },
+      } : null,
+      enemies: enemies.filter(e => e.alive).map(e => ({ x: e.x, y: e.y, type: e.type, hitFlash: e.hitFlash, hp: e.hp, maxHp: e.maxHp })),
+      playerBullets: playerBullets.map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h })),
+      enemyBullets: enemyBullets.map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h })),
+      powerups: powerups.map(p => ({ x: p.x, y: p.y, type: p.type, phase: p.phase })),
+      meteors: meteors.map(m => ({ x: m.x, y: m.y, rot: m.rot, r: m.r })),
+      ships,
+      levelClear: state.screen === 'levelclear' ? {
+        title: el.levelClearTitle.textContent, grade: el.levelClearGrade.textContent,
+        gradeColor: el.levelClearGrade.style.color, tally: el.levelClearTally.textContent,
+        next: el.levelClearNext.textContent, lore: el.levelClearLore.textContent,
+      } : null,
+      gameOver: state.screen === 'gameover' ? {
+        cause: el.gameoverCause.textContent, wave: el.gameoverWave.textContent, score: el.gameoverScore.textContent,
+      } : null,
+    };
+  }
+
+  // Guest-only: overwrites the exact same module-level variables that the
+  // solo/host update loop maintains, so the existing render() pipeline draws
+  // this snapshot with zero changes — the guest never runs update() at all.
+  function applyGuestSnapshot(snap) {
+    if (!snap) return;
+    setScreen(snap.screen);
+    if (snap.planetIdx !== state.planetIdx) {
+      state.planetIdx = snap.planetIdx;
+      initPlanetScenery(); // re-tint the locally-rendered nebulae/planet sphere to match
+    }
+    state.wave = snap.wave; state.score = snap.score;
+    state.lives = snap.lives; state.maxLives = snap.maxLives;
+    el.score.textContent = 'SCORE ' + snap.score;
+    el.planetName.textContent = snap.planetNameText;
+    el.combo.textContent = snap.comboText;
+    el.combo.classList.toggle('show', snap.comboShow);
+    refreshLivesHUD();
+    state.killCam = snap.killCam; state.deathCam = snap.deathCam;
+    state.bossCam = snap.bossCam; state.warpCam = snap.warpCam;
+    state.shakeMag = snap.shakeMag; state.shakeTime = snap.shakeTime;
+    state.flashColor = snap.flashColor; state.flashAlpha = snap.flashAlpha;
+    state.blackoutPulse = snap.blackoutPulse;
+
+    boss = snap.boss ? { ...snap.boss, w: 78, h: 78 } : null;
+    if (boss) {
+      el.bossWrap.classList.remove('hidden');
+      el.bossName.textContent = boss.name;
+      el.bossFill.style.width = Math.max(0, (boss.hp / boss.maxHp) * 100) + '%';
+    } else {
+      el.bossWrap.classList.add('hidden');
+    }
+
+    enemies = (snap.enemies || []).map(e => ({ ...e, alive: true }));
+    playerBullets = snap.playerBullets || [];
+    enemyBullets = snap.enemyBullets || [];
+    powerups = snap.powerups || [];
+    meteors = (snap.meteors || []).map(m => ({ ...m, w: (m.r || 16) * 1.6, h: (m.r || 16) * 1.6 }));
+
+    mpGuestShips = Object.entries(snap.ships || {}).map(([id, s]) => ({
+      id, x: s.x, y: s.y, baseSize: 34, sizeMul: s.sizeMul || 1,
+      shieldTimer: s.shieldOn ? 1 : 0, overdriveTimer: s.overdriveOn ? 1 : 0,
+      weaponTimer: s.weaponOn ? 1 : 0, droneTimer: s.droneOn ? 1 : 0,
+      hitFlash: 0, exploded: !!s.exploded, colorIdx: s.colorIdx || 0,
+    }));
+
+    if (snap.levelClear) {
+      el.levelClearTitle.textContent = snap.levelClear.title;
+      el.levelClearGrade.textContent = snap.levelClear.grade;
+      el.levelClearGrade.style.color = snap.levelClear.gradeColor;
+      el.levelClearTally.textContent = snap.levelClear.tally;
+      el.levelClearNext.textContent = snap.levelClear.next;
+      el.levelClearLore.textContent = snap.levelClear.lore;
+    }
+    if (snap.gameOver) {
+      el.gameoverCause.textContent = snap.gameOver.cause;
+      el.gameoverWave.textContent = snap.gameOver.wave;
+      el.gameoverScore.textContent = snap.gameOver.score;
+    }
+    if (snap.screen === 'upgrade') {
+      el.upgradeCards.innerHTML = '<p class="subtitle">Host is choosing an upgrade…</p>';
+    }
+  }
+
+  function renderLobbyPlayers(playersMap) {
+    const rows = Object.entries(playersMap).map(([id, info]) => {
+      const color = SHIP_COLORS[(info.colorIdx || 0) % SHIP_COLORS.length];
+      return '<div class="lobby-player-row"><span class="lobby-player-dot" style="background:' + color + ';color:' + color + '"></span>'
+        + escapeHtml(info.name) + (info.isHost ? '<span class="lobby-player-host-tag">HOST</span>' : '') + '</div>';
+    }).join('');
+    el.lobbyPlayers.innerHTML = rows;
+    el.lobbyPlayersGuest.innerHTML = rows;
+  }
+
+  function onRoomUpdate(data) {
+    if (!data) {
+      if (state.mp.role) { mpTeardown(); setScreen('start'); }
+      return;
+    }
+    if (data.players) { mpLastPlayers = data.players; renderLobbyPlayers(data.players); }
+    if (data.phase === 'ended' && state.mp.role === 'guest') {
+      mpTeardown();
+      setScreen('start');
+      return;
+    }
+    if (state.mp.role === 'guest' && data.phase === 'playing') {
+      if (!state.mp.active) beginGuestPlay();
+      if (data.snapshot) applyGuestSnapshot(data.snapshot);
+    }
+  }
+
+  function beginGuestPlay() {
+    state.mp.active = true;
+    mpGuestInputAccum = 0;
+    el.mpBadge.textContent = 'ROOM ' + state.mp.roomCode;
+    el.mpBadge.classList.remove('hidden');
+  }
+
+  function startMultiplayerGame(playersMap) {
+    remoteShips = Object.entries(playersMap)
+      .filter(([id]) => id !== state.mp.playerId)
+      .map(([id, info]) => makeRemoteShip(id, info.name, info.colorIdx));
+    startGame();
+    player.id = state.mp.playerId;
+    player.name = state.mp.playerName;
+    player.colorIdx = 0;
+    // Spread starting x positions by color slot so ships don't spawn
+    // perfectly stacked on top of each other (they'd otherwise all default
+    // to dead-center from makePlayer()/makeRemoteShip()).
+    const spread = 46;
+    player.x = BASE_W / 2 + (0 - (remoteShips.length) / 2) * spread;
+    remoteShips.forEach((sh, i) => { sh.x = BASE_W / 2 + ((i + 1) - (remoteShips.length) / 2) * spread; });
+    state.mp.active = true;
+    mpBroadcastAccum = 0;
+    el.mpBadge.textContent = 'ROOM ' + state.mp.roomCode;
+    el.mpBadge.classList.remove('hidden');
+  }
+
+  function sendGuestInput() {
+    const left = MOVE_LEFT_KEYS.some(k => keys.has(k));
+    const right = MOVE_RIGHT_KEYS.some(k => keys.has(k));
+    const firing = FIRE_KEYS.some(k => keys.has(k));
+    const touchDelta = touchDragDelta;
+    touchDragDelta = 0;
+    MultiplayerSys.sendInput(state.mp.roomCode, state.mp.playerId, { left, right, firing, touchDelta });
+  }
+
+  function mpTeardown() {
+    if (mpUnsubRoom) { mpUnsubRoom(); mpUnsubRoom = null; }
+    if (mpUnsubInputs) { mpUnsubInputs(); mpUnsubInputs = null; }
+    state.mp = { active: false, role: null, roomCode: null, playerId: null, playerName: '', colorIdx: 0 };
+    remoteShips = []; mpGuestShips = []; mpRemoteInputs = {}; mpLastPlayers = {};
+    el.mpBadge.classList.add('hidden');
+  }
+
   // ---------- Render ----------
   function render() {
     ctx.save();
@@ -1917,7 +2447,14 @@
     drawPowerups();
     drawFloaters();
     if (state.screen === 'playing' || state.screen === 'paused') {
-      drawPlayer(player);
+      if (state.mp.active && state.mp.role === 'guest') {
+        for (const sh of mpGuestShips) drawPlayer(sh, SHIP_COLORS[sh.colorIdx % SHIP_COLORS.length]);
+      } else if (state.mp.active && state.mp.role === 'host') {
+        drawPlayer(player, SHIP_COLORS[0]);
+        for (const sh of remoteShips) drawPlayer(sh, SHIP_COLORS[sh.colorIdx % SHIP_COLORS.length]);
+      } else {
+        drawPlayer(player);
+      }
     }
     if (state.warpCam > 0) drawWarpJump(state.warpCam);
     if (boss && boss.introTimer > 0) drawBossIntro(boss);
@@ -2105,7 +2642,7 @@
     ctx.restore();
   }
 
-  function drawPlayer(p) {
+  function drawPlayer(p, colorOverride) {
     if (p.exploded) return;
     const blinking = p.hitFlash > 0 && Math.floor(p.hitFlash * 12) % 2 === 0;
     if (blinking) return;
@@ -2136,7 +2673,7 @@
       ctx.restore();
     }
 
-    drawFighter(p.x, p.y, p.sizeMul * (p.baseSize / 34), p.weaponTimer > 0 || p.overdriveTimer > 0);
+    drawFighter(p.x, p.y, p.sizeMul * (p.baseSize / 34), p.weaponTimer > 0 || p.overdriveTimer > 0, colorOverride);
 
     if (p.droneTimer > 0) {
       ctx.save();
@@ -2157,9 +2694,9 @@
 
   // Hand-drawn vector fighter for Player 1 — always perfectly upright,
   // unlike a rocket emoji (whose artwork is pre-tilted on some platforms).
-  function drawFighter(x, y, scale, charged) {
+  function drawFighter(x, y, scale, charged, colorOverride) {
     const t = performance.now() / 1000;
-    const accent = charged ? '#ffd23f' : '#7dffb0';
+    const accent = charged ? '#ffd23f' : (colorOverride || '#7dffb0');
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale);
